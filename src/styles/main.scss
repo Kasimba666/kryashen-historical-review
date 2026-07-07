@@ -1,0 +1,205 @@
+@use './variables.scss' as *;
+@use './themes.scss';
+
+// ========================================
+// Глобальные стили
+// ========================================
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  font-size: $font-size-base;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  font-family: $font-family;
+  background-color: var(--color-bg);
+  color: var(--color-text-regular);
+  line-height: 1.6;
+  min-height: 100vh;
+  transition: background-color 0.2s, color 0.2s;
+}
+
+a {
+  color: var(--link-color);
+  text-decoration: none;
+  transition: color 0.15s;
+
+  &:hover {
+    color: var(--link-color-hover);
+  }
+}
+
+// ========================================
+// Element Plus — кастомные переменные темы
+// ========================================
+:root,
+[data-theme='light'],
+[data-theme='dark'] {
+  // Цвета кнопок
+  --el-color-primary: var(--color-primary);
+  --el-color-primary-hover: var(--color-primary-hover);
+  --el-color-primary-active: var(--color-primary-active);
+  --el-color-primary-light-3: var(--color-primary-light-3);
+  --el-color-primary-light-5: var(--color-primary-light-2);
+  --el-color-primary-light-7: var(--color-primary-light-1);
+  --el-color-primary-light-8: var(--color-primary-light-1);
+  --el-color-primary-light-9: var(--color-primary-light-1);
+  --el-color-primary-dark-2: var(--color-primary-active);
+
+  --el-color-success: var(--color-success);
+  --el-color-success-hover: var(--color-success-hover);
+  --el-color-success-light: var(--color-success-light);
+
+  --el-color-warning: var(--color-warning);
+  --el-color-warning-hover: var(--color-warning-hover);
+  --el-color-warning-light: var(--color-warning-light);
+
+  --el-color-danger: var(--color-danger);
+  --el-color-danger-hover: var(--color-danger-hover);
+  --el-color-danger-light: var(--color-danger-light);
+
+  --el-color-info: var(--color-info);
+  --el-color-info-hover: var(--color-info-hover);
+  --el-color-info-light: var(--color-info-light);
+
+  // Текст
+  --el-text-color-primary: var(--color-text-primary);
+  --el-text-color-regular: var(--color-text-regular);
+  --el-text-color-secondary: var(--color-text-secondary);
+  --el-text-color-placeholder: var(--color-text-placeholder);
+  --el-text-color-disabled: var(--color-text-disabled);
+
+  // Фоны
+  --el-bg-color: var(--color-bg-card);
+  --el-bg-color-page: var(--color-bg);
+  --el-bg-color-overlay: var(--color-bg-card);
+  --el-fill-color: var(--color-bg-hover);
+  --el-fill-color-light: var(--color-bg-active);
+  --el-fill-color-lighter: var(--color-bg-active);
+  --el-fill-color-blank: var(--color-bg-card);
+
+  // Границы
+  --el-border-color: var(--color-border);
+  --el-border-color-light: var(--color-border-light);
+  --el-border-color-lighter: var(--color-border-lighter);
+  --el-border-color-extra-light: var(--color-border-lighter);
+  --el-border-color-dark: var(--color-border-dark);
+
+  // Тени
+  --el-box-shadow: var(--shadow-sm);
+  --el-box-shadow-light: var(--shadow-md);
+  --el-box-shadow-lighter: var(--shadow-md);
+  --el-box-shadow-dark: var(--shadow-lg);
+
+  // Маски
+  --el-mask-color: var(--color-mask);
+
+  // Скелетон
+  --el-skeleton-color: var(--skeleton-bg);
+  --el-skeleton-to-color: var(--skeleton-to);
+
+  // Теги
+  --el-tag-bg-color: var(--tag-bg);
+  --el-tag-text-color: var(--tag-text);
+  --el-tag-border-color: var(--tag-border);
+}
+
+// ========================================
+// Компактные стили компонентов
+// ========================================
+.el-card {
+  --el-card-padding: 12px 16px;
+  border-radius: $border-radius;
+  border: 1px solid var(--color-border-light);
+  transition: border-color 0.2s, box-shadow 0.2s;
+
+  &:hover {
+    border-color: var(--color-border);
+  }
+}
+
+.el-card__header {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--color-border-lighter);
+  font-size: $font-size-base;
+  font-weight: 600;
+}
+
+.el-card__body {
+  padding: 12px 16px;
+}
+
+.el-header {
+  --el-header-padding: 0 20px;
+  border-bottom: 1px solid var(--color-border-light);
+  background-color: var(--color-bg-header);
+  transition: background-color 0.2s;
+}
+
+.el-main {
+  --el-main-padding: 0;
+}
+
+.el-button {
+  font-size: $font-size-base;
+  --el-button-hover-bg-color: var(--color-bg-hover);
+}
+
+.el-tag {
+  --el-tag-font-size: $font-size-sm;
+  border-radius: $border-radius-sm;
+}
+
+.el-empty {
+  padding: 40px 0;
+}
+
+.el-skeleton {
+  margin-bottom: 8px;
+}
+
+.el-timeline-item__wrapper {
+  padding-left: 20px;
+}
+
+.el-timeline-item__timestamp {
+  font-size: $font-size-sm;
+  color: var(--color-text-placeholder);
+}
+
+.el-table {
+  --el-table-header-bg-color: var(--table-header-bg);
+  --el-table-row-hover-bg-color: var(--table-row-hover);
+  --el-table-striped-row-bg-color: var(--table-row-striped);
+  --el-table-border-color: var(--color-border-lighter);
+}
+
+// ========================================
+// Скроллбар
+// ========================================
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 3px;
+  transition: background 0.15s;
+
+  &:hover {
+    background: var(--scrollbar-thumb-hover);
+  }
+}
