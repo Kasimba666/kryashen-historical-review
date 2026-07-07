@@ -13,8 +13,14 @@ var authHeaders = {
 var usersCache = null
 var usersCacheTime = 0
 
-// Используем относительные пути (работает на любом порту/хосте)
-var API_BASE = '/kryashen'
+// Определяем базовый URL для API в зависимости от окружения
+// В development используем относительные пути через прокси
+// В production - прямой URL к OJS серверу
+var API_BASE = OJS_BASE
+if (OJS_BASE.includes('/kryashen/') || OJS_BASE === '/kryashen') {
+  // Прокси режим (development) - используем относительный путь
+  API_BASE = '/kryashen'
+}
 
 // ========================================
 // Утилиты

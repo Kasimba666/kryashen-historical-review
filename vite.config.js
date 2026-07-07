@@ -1,6 +1,6 @@
 import { fileURLToPath, URL } from 'node:url'
 
-import { defineConfig } from 'vite'
+import { defineConfig, loadEnv } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import vueDevTools from 'vite-plugin-vue-devtools'
 
@@ -15,88 +15,96 @@ function getCorsHeaders(origin) {
 }
 
 // https://vite.dev/config/
-export default defineConfig({
-  plugins: [
-    vue(),
-    vueDevTools(),
-  ],
-  resolve: {
-    alias: {
-      '@': fileURLToPath(new URL('./src', import.meta.url)),
-    },
-  },
-  server: {
-    proxy: {
-      '/kryashen': {
-        target: 'http://95.163.242.153',
-        changeOrigin: true,
-        cookieDomainRewrite: 'localhost',
-        secure: false,
-        cookiePathRewrite: {
-          '/': '/'
-        },
-        rewrite: function (path) {
-          return path.replace(/^\/kryashen/, '/index.php/kryashen')
-        },
-        configure: function (proxy) {
-          proxy.on('proxyRes', function (proxyRes, req, res) {
-            var location = proxyRes.headers['location']
-            if (location) {
-              // Используем текущий origin вместо хардкода localhost:5173
-              var currentOrigin = req.headers.origin || 'http://localhost:5173'
-              location = location.replace(
-                /https?:\/\/95\.163\.242\.153\/index\.php\/kryashen\//g,
-                currentOrigin + '/kryashen/'
-              )
-              location = location.replace(
-                /https?:\/\/95\.163\.242\.153\/ru\//g,
-                currentOrigin + '/kryashen/ru/'
-              )
-              proxyRes.headers['location'] = location
-            }
-            // Применяем CORS заголовки с точным origin
-            var headers = getCorsHeaders(req.headers.origin)
-            Object.keys(headers).forEach(function (key) {
-              res.setHeader(key, headers[key])
-            })
-          })
-        }
+export default defineConfig(({ command, mode }) => {
+  // Определяем base URL в зависимости от режима
+  // В production (gh-pages) - используем репозиторий как базу
+  // В development - корень сайта
+  var baseUrl = mode === 'production' ? '/kryashen-historical-review/' : '/'
+
+  return {
+    plugins: [
+      vue(),
+      vueDevTools(),
+    ],
+    resolve: {
+      alias: {
+        '@': fileURLToPath(new URL('./src', import.meta.url)),
       },
-      '/ru': {
-        target: 'http://95.163.242.153',
-        changeOrigin: true,
-        cookieDomainRewrite: 'localhost',
-        cookiePathRewrite: {
-          '/': '/'
-        },
-        rewrite: function (path) {
-          return '/index.php' + path
-        },
-        configure: function (proxy) {
-          proxy.on('proxyRes', function (proxyRes, req, res) {
-            var location = proxyRes.headers['location']
-            if (location) {
-              // Используем текущий origin вместо хардкода
-              var currentOrigin = req.headers.origin || 'http://localhost:5173'
-              location = location.replace(
-                /https?:\/\/95\.163\.242\.153\/ru\//g,
-                currentOrigin + '/kryashen/ru/'
-              )
-              location = location.replace(
-                /https?:\/\/95\.163\.242\.153\//g,
-                currentOrigin + '/kryashen/'
-              )
-              if (location.startsWith('/')) {
-                location = currentOrigin + '/kryashen' + location
+    },
+    base: baseUrl,
+    server: {
+      proxy: {
+        '/kryashen': {
+          target: 'http://95.163.242.153',
+          changeOrigin: true,
+          cookieDomainRewrite: 'localhost',
+          secure: false,
+          cookiePathRewrite: {
+            '/': '/'
+          },
+          rewrite: function (path) {
+            return path.replace(/^\/kryashen/, '/index.php/kryashen')
+          },
+          configure: function (proxy) {
+            proxy.on('proxyRes', function (proxyRes, req, res) {
+              var location = proxyRes.headers['location']
+              if (location) {
+                // Используем текущий origin вместо хардкода localhost:5173
+                var currentOrigin = req.headers.origin || 'http://localhost:5173'
+                location = location.replace(
+                  /https?:\/\/95\.163\.242\.153\/index\.php\/kryashen\//g,
+                  currentOrigin + '/kryashen/'
+                )
+                location = location.replace(
+                  /https?:\/\/95\.163\.242\.153\/ru\//g,
+                  currentOrigin + '/kryashen/ru/'
+                )
+                proxyRes.headers['location'] = location
               }
-              proxyRes.headers['location'] = location
-            }
-            // Применяем CORS заголовки с точный origin
-            var headers = getCorsHeaders(req.headers.origin)
-            Object.keys(headers).forEach(function (key) {
-              res.setHeader(key, headers[key])
+              // Применяем CORS заголовки с точным origin
+              var headers = getCorsHeaders(req.headers.origin)
+              Object.keys(headers).forEach(function (key) {
+                res.setHeader(key, headers[key])
+              })
             })
-          })
+          }
+        },
+        '/ru': {
+          target: 'http://95.163.242.153',
+          changeOrigin: true,
+          cookieDomainRewrite: 'localhost',
+          cookiePathRewrite: {
+            '/': '/'
+          },
+          rewrite: function (path) {
+            return '/index.php' + path
+          },
+          configure: function (proxy) {
+            proxy.on('proxyRes', function (proxyRes, req, res) {
+              var location = proxyRes.headers['location']
+              if (location) {
+                // Используем текущий origin вместо хардкода
+                var currentOrigin = req.headers.origin || 'http://localhost:5173'
+                location = location.replace(
+                  /https?:\/\/95\.163\.242\.153\/ru\//g,
+                  currentOrigin + '/kryashen/ru/'
+                )
+                location = location.replace(
+                  /https?:\/\/95\.163\.242\.153\//g,
+                  currentOrigin + '/kryashen/'
+                )
+                if (location.startsWith('/')) {
+                  location = currentOrigin + '/kryashen' + location
+                }
+                proxyRes.headers['location'] = location
+              }
+              // Применяем CORS заголовки с точный origin
+              var headers = getCorsHeaders(req.headers.origin)
+              Object.keys(headers).forEach(function (key) {
+                res.setHeader(key, headers[key])
+              })
+            })
+          }
         }
       }
     }

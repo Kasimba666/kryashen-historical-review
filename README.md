@@ -1,6 +1,6 @@
-# kryashen-historical-review
+# Кряшен Historical Review
 
-This template should help get you started developing with Vue 3 in Vite.
+Веб-приложение для работы с журналом Кряшенского народного историко-краеведческого журнала.
 
 ## Recommended IDE Setup
 
@@ -36,3 +36,16 @@ yarn dev
 ```sh
 yarn build
 ```
+
+### Deploy to GitHub Pages
+
+```sh
+yarn deploy
+```
+
+Приложение будет доступно по адресу: https://kasimba666.github.io/kryashen-historical-review/
+
+## Demo Account
+
+- Login: ojs
+- Password: 35bfx140

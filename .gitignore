@@ -37,3 +37,7 @@ __screenshots__/
 
 # Vite
 *.timestamp-*-*.mjs
+
+# Environment (keep .env.production for CI/CD builds)
+.env.local
+.env.*.local
