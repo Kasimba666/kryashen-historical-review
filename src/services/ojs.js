@@ -17,10 +17,11 @@ var usersCacheTime = 0
 // В development используем относительные пути через прокси
 // В production - прямой URL к OJS серверу
 var API_BASE = OJS_BASE
-if (OJS_BASE.includes('/kryashen/') || OJS_BASE === '/kryashen') {
+if (OJS_BASE === '/kryashen' || OJS_BASE === '/kryashen/') {
   // Прокси режим (development) - используем относительный путь
   API_BASE = '/kryashen'
 }
+// Для полных URL (production) оставляем OJS_BASE как API_BASE
 
 // ========================================
 // Утилиты

@@ -1,6 +1,6 @@
 import { fileURLToPath, URL } from 'node:url'
 
-import { defineConfig, loadEnv } from 'vite'
+import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import vueDevTools from 'vite-plugin-vue-devtools'
 
@@ -35,10 +35,10 @@ export default defineConfig(({ command, mode }) => {
     server: {
       proxy: {
         '/kryashen': {
-          target: 'http://95.163.242.153',
+          target: 'https://tarihjournals.ru',
           changeOrigin: true,
-          cookieDomainRewrite: 'localhost',
           secure: false,
+          cookieDomainRewrite: 'localhost',
           cookiePathRewrite: {
             '/': '/'
           },
@@ -49,19 +49,17 @@ export default defineConfig(({ command, mode }) => {
             proxy.on('proxyRes', function (proxyRes, req, res) {
               var location = proxyRes.headers['location']
               if (location) {
-                // Используем текущий origin вместо хардкода localhost:5173
                 var currentOrigin = req.headers.origin || 'http://localhost:5173'
                 location = location.replace(
-                  /https?:\/\/95\.163\.242\.153\/index\.php\/kryashen\//g,
+                  /https?:\/\/tarihjournals\.ru\/index\.php\/kryashen\//g,
                   currentOrigin + '/kryashen/'
                 )
                 location = location.replace(
-                  /https?:\/\/95\.163\.242\.153\/ru\//g,
+                  /https?:\/\/tarihjournals\.ru\/ru\//g,
                   currentOrigin + '/kryashen/ru/'
                 )
                 proxyRes.headers['location'] = location
               }
-              // Применяем CORS заголовки с точным origin
               var headers = getCorsHeaders(req.headers.origin)
               Object.keys(headers).forEach(function (key) {
                 res.setHeader(key, headers[key])
@@ -70,8 +68,9 @@ export default defineConfig(({ command, mode }) => {
           }
         },
         '/ru': {
-          target: 'http://95.163.242.153',
+          target: 'https://tarihjournals.ru',
           changeOrigin: true,
+          secure: false,
           cookieDomainRewrite: 'localhost',
           cookiePathRewrite: {
             '/': '/'
@@ -83,14 +82,13 @@ export default defineConfig(({ command, mode }) => {
             proxy.on('proxyRes', function (proxyRes, req, res) {
               var location = proxyRes.headers['location']
               if (location) {
-                // Используем текущий origin вместо хардкода
                 var currentOrigin = req.headers.origin || 'http://localhost:5173'
                 location = location.replace(
-                  /https?:\/\/95\.163\.242\.153\/ru\//g,
+                  /https?:\/\/tarihjournals\.ru\/ru\//g,
                   currentOrigin + '/kryashen/ru/'
                 )
                 location = location.replace(
-                  /https?:\/\/95\.163\.242\.153\//g,
+                  /https?:\/\/tarihjournals\.ru\//g,
                   currentOrigin + '/kryashen/'
                 )
                 if (location.startsWith('/')) {
@@ -98,7 +96,6 @@ export default defineConfig(({ command, mode }) => {
                 }
                 proxyRes.headers['location'] = location
               }
-              // Применяем CORS заголовки с точный origin
               var headers = getCorsHeaders(req.headers.origin)
               Object.keys(headers).forEach(function (key) {
                 res.setHeader(key, headers[key])

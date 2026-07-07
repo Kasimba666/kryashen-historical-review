@@ -1,0 +1,16 @@
+# КОНЕЧНЫЙ ВАРИАНТ .htaccess для OJS
+# ВАЖНО: используйте именно эти регулярные выражения!
+
+<IfModule mod_headers.c>
+    # Разрешаем ВСЕ локальные порты и gh-pages
+    SetEnvIf Origin "(https://kasimba666.github.io|http://localhost:[0-9]+|http://127\.0\.0\.1:[0-9]+)" CORS_ORIGIN=$0
+    
+    Header always set Access-Control-Allow-Origin %{CORS_ORIGIN}e env=CORS_ORIGIN
+    Header always set Access-Control-Allow-Credentials "true"
+    Header always set Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
+    Header always set Access-Control-Allow-Headers "Content-Type, Authorization, X-CSRF-Token, X-Requested-With"
+</IfModule>
+
+RewriteEngine On
+RewriteCond %{REQUEST_METHOD} OPTIONS
+RewriteRule ^(.*)$ $1 [R=200,L]
