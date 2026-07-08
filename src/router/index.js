@@ -3,6 +3,7 @@ import JournalPage from '@/pages/JournalPage.vue'
 import IssueDetailPage from '@/pages/IssueDetailPage.vue'
 import LoginPage from '@/pages/LoginPage.vue'
 import UsersPage from '@/pages/UsersPage.vue'
+import AboutPage from '@/pages/AboutPage.vue'
 import { authMiddleware } from '@/composables/useAuthorization'
 
 const router = createRouter({
@@ -12,6 +13,11 @@ const router = createRouter({
       path: '/',
       name: 'journal',
       component: JournalPage
+    },
+    {
+      path: '/about',
+      name: 'about',
+      component: AboutPage
     },
     {
       path: '/issues/:id',

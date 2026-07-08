@@ -3,12 +3,29 @@
     <el-container>
       <el-header class="app-header" height="48px">
         <div class="header-content">
-          <router-link to="/" class="header-title">
-            <el-icon :size="20"><Reading /></el-icon>
-            <span>Кряшенское историческое обозрение</span>
-          </router-link>
+          <div class="header-left">
+            <router-link to="/" class="header-logo">
+              <el-icon :size="20"><Reading /></el-icon>
+              <span>Кряшенское историческое обозрение</span>
+            </router-link>
+            <el-menu
+              :default-active="currentRoute"
+              mode="horizontal"
+              :ellipsis="false"
+              class="nav-menu"
+              @select="handleNavSelect"
+            >
+              <el-menu-item index="/about">
+                <el-icon :size="14"><InfoFilled /></el-icon>
+                <span>О журнале</span>
+              </el-menu-item>
+              <el-menu-item index="/">
+                <el-icon :size="14"><Collection /></el-icon>
+                <span>Выпуски</span>
+              </el-menu-item>
+            </el-menu>
+          </div>
           <div class="header-actions">
-            <!-- Пользователь -->
             <template v-if="isAuthenticated">
               <el-dropdown trigger="click" @command="handleDropdownCommand">
                 <el-button class="header-btn user-btn" text>
@@ -45,10 +62,8 @@
               </el-tooltip>
             </template>
 
-            <!-- Разделитель -->
             <span class="header-divider"></span>
 
-            <!-- Переключатель темы -->
             <el-tooltip :content="isDark ? 'Светлая тема' : 'Тёмная тема'" placement="bottom">
               <el-button class="header-btn theme-toggle" text @click="toggleTheme">
                 <el-icon :size="18">
@@ -68,7 +83,7 @@
 </template>
 
 <script>
-import { Reading, Moon, Sunny, User, UserFilled, SwitchButton, ArrowDown, Setting } from '@element-plus/icons-vue'
+import { Reading, Moon, Sunny, User, UserFilled, SwitchButton, ArrowDown, Setting, InfoFilled, Collection } from '@element-plus/icons-vue'
 import { useTheme } from '@/composables/useTheme'
 import { useAuth } from '@/composables/useAuth'
 
@@ -82,7 +97,9 @@ export default {
     UserFilled,
     SwitchButton,
     ArrowDown,
-    Setting
+    Setting,
+    InfoFilled,
+    Collection
   },
   data() {
     return {
@@ -94,22 +111,28 @@ export default {
       canManageUsers: false
     }
   },
+  computed: {
+    currentRoute: function () {
+      return this.$route.path
+    }
+  },
   mounted() {
     var theme = useTheme()
     var current = theme.initTheme()
     this.isDark = current === 'dark'
-
     this.updateAuthState()
   },
   methods: {
-    updateAuthState() {
+    handleNavSelect: function (index) {
+      this.$router.push(index)
+    },
+    updateAuthState: function () {
       var auth = useAuth()
       this.isAuthenticated = auth.isAuthenticated()
 
       if (this.isAuthenticated) {
         this.displayName = auth.getDisplayName()
         this.username = auth.getUsername()
-
         var roles = auth.getRoleNames()
         this.roleNames = roles.map(function (r) { return r.name }).join(', ')
         this.canManageUsers = auth.hasRole(16) || auth.hasRole(17)
@@ -120,28 +143,26 @@ export default {
         this.canManageUsers = false
       }
     },
-    toggleTheme() {
+    toggleTheme: function () {
       var theme = useTheme()
       var next = theme.toggleTheme()
       this.isDark = next === 'dark'
     },
-    goToLogin() {
+    goToLogin: function () {
       this.$router.push('/login')
     },
-    handleDropdownCommand(command) {
+    handleDropdownCommand: function (command) {
       if (command === 'logout') {
         this.handleLogout()
       } else if (command === 'users') {
         this.$router.push('/users')
       }
     },
-    handleLogout() {
+    handleLogout: function () {
       var auth = useAuth()
       auth.logout()
       this.updateAuthState()
-
       this.$message.success('Вы вышли из системы')
-
       if (this.$route.path === '/login') {
         this.$router.push('/')
       }
@@ -179,7 +200,14 @@ export default {
   justify-content: space-between;
 }
 
-.header-title {
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 100%;
+}
+
+.header-logo {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -188,9 +216,37 @@ export default {
   font-size: 1rem;
   font-weight: 600;
   transition: color 0.15s;
+  white-space: nowrap;
 
   &:hover {
     color: var(--color-primary);
+  }
+}
+
+.nav-menu {
+  border-bottom: none !important;
+  height: 48px;
+  background: transparent;
+
+  :deep(.el-menu-item) {
+    height: 48px;
+    line-height: 48px;
+    font-size: 0.85rem;
+    color: var(--color-text-secondary);
+    border-bottom: 2px solid transparent;
+    transition: color 0.15s, border-color 0.15s;
+    background: transparent !important;
+
+    &:hover {
+      color: var(--color-text-primary);
+      background: transparent !important;
+    }
+
+    &.is-active {
+      color: var(--color-primary);
+      border-bottom-color: var(--color-primary);
+      background: transparent !important;
+    }
   }
 }
 
@@ -246,7 +302,6 @@ export default {
   width: 100%;
 }
 
-// Dropdown styles
 .dropdown-user-info {
   display: flex;
   flex-direction: column;

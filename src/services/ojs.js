@@ -297,7 +297,9 @@ export function getJournalInfo() {
       return response.json()
     })
     .then(function (data) {
-      return data.items && data.items.length > 0 ? data.items[0] : null
+      var journal = data.items && data.items.length > 0 ? data.items[0] : null
+      console.log('[OJS getJournalInfo] Journal data:', JSON.stringify(journal, null, 2))
+      return journal
     })
 }
 

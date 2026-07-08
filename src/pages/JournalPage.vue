@@ -1,29 +1,10 @@
 <template>
   <div class="journal-page">
-    <el-skeleton :loading="loading" animated :count="3">
-      <template #default>
-        <el-card v-if="journal" class="journal-card">
-          <template #header>
-            <div class="journal-header">
-              <div class="journal-info">
-                <h1 class="journal-name">{{ journalName }}</h1>
-                <p v-if="journalDescription" class="journal-description" v-html="journalDescription"></p>
-                <div class="journal-meta">
-                  <el-tag v-if="journal.acronym" size="small" type="info">{{ journal.acronym.ru || journal.acronym.en }}</el-tag>
-                  <el-tag v-if="journal.url" size="small" type="success" @click="openUrl(journal.url)">Сайт журнала</el-tag>
-                </div>
-              </div>
-            </div>
-          </template>
-        </el-card>
-      </template>
-    </el-skeleton>
-
     <h2 class="section-title">Выпуски</h2>
 
-    <el-skeleton :loading="issuesLoading" animated :count="5">
+    <el-skeleton :loading="loading" animated :count="5">
       <template #default>
-        <el-empty v-if="!issuesLoading && issues.length === 0" description="Нет выпусков" />
+        <el-empty v-if="!loading && issues.length === 0" description="Нет выпусков" />
 
         <div v-else class="issues-list">
           <el-card
@@ -59,7 +40,7 @@
 
 <script>
 import { ArrowRight } from '@element-plus/icons-vue'
-import { getJournalInfo, getIssues } from '@/services/ojs'
+import { getIssues } from '@/services/ojs'
 
 export default {
   name: 'JournalPage',
@@ -68,28 +49,11 @@ export default {
   },
   data() {
     return {
-      journal: null,
       issues: [],
-      loading: true,
-      issuesLoading: true
-    }
-  },
-  computed: {
-    journalName: function () {
-      if (!this.journal) return ''
-      return this.journal.name && this.journal.name.ru
-        ? this.journal.name.ru
-        : (this.journal.name && this.journal.name.en ? this.journal.name.en : '')
-    },
-    journalDescription: function () {
-      if (!this.journal) return ''
-      return this.journal.description && this.journal.description.ru
-        ? this.journal.description.ru
-        : (this.journal.description && this.journal.description.en ? this.journal.description.en : '')
+      loading: true
     }
   },
   mounted() {
-    this.loadJournal()
     this.loadIssues()
   },
   methods: {
@@ -97,25 +61,8 @@ export default {
       if (!obj) return ''
       return obj.ru || obj.en || ''
     },
-    openUrl: function (url) {
-      window.open(url, '_blank')
-    },
-    loadJournal() {
-      this.loading = true
-      getJournalInfo()
-        .then(function (data) {
-          this.journal = data
-        }.bind(this))
-        .catch(function (error) {
-          console.error(error)
-          this.journal = null
-        }.bind(this))
-        .finally(function () {
-          this.loading = false
-        }.bind(this))
-    },
     loadIssues() {
-      this.issuesLoading = true
+      this.loading = true
       getIssues()
         .then(function (data) {
           this.issues = data
@@ -125,7 +72,7 @@ export default {
           this.issues = []
         }.bind(this))
         .finally(function () {
-          this.issuesLoading = false
+          this.loading = false
         }.bind(this))
     },
     goToIssue(id) {
@@ -139,40 +86,6 @@ export default {
 .journal-page {
   max-width: 900px;
   margin: 0 auto;
-}
-
-.journal-card {
-  margin-bottom: 24px;
-}
-
-.journal-header {
-  display: flex;
-  align-items: flex-start;
-  gap: 16px;
-}
-
-.journal-info {
-  flex: 1;
-}
-
-.journal-name {
-  margin: 0;
-  font-size: 1.5rem;
-  font-weight: 600;
-}
-
-.journal-description {
-  margin: 8px 0;
-  color: var(--el-text-color-secondary);
-  font-size: 0.9rem;
-  line-height: 1.5;
-}
-
-.journal-meta {
-  display: flex;
-  gap: 8px;
-  margin-top: 8px;
-  flex-wrap: wrap;
 }
 
 .section-title {
