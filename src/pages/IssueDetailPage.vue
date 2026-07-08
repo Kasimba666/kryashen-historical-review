@@ -53,9 +53,12 @@
           <div class="section-header">
             <h2 class="section-title">Статьи выпуска</h2>
             <div v-if="canManageArticles" class="section-actions">
-              <el-button type="primary" size="small" @click="openAddArticleDialog">
+              <el-button type="primary" size="small" @click="openCreateArticleDialog">
                 <el-icon><Plus /></el-icon>
-                Добавить статью
+                Создать статью
+              </el-button>
+              <el-button size="small" @click="openAddArticleDialog">
+                Добавить из материалов
               </el-button>
             </div>
           </div>
@@ -148,6 +151,62 @@
       </template>
     </el-dialog>
 
+    <!-- Диалог создания новой статьи -->
+    <el-dialog v-model="createArticleDialogVisible" title="Создать статью" width="600px">
+      <el-form label-width="120px" :model="articleForm">
+        <el-form-item label="Раздел" prop="sectionId">
+          <el-select v-model="articleForm.sectionId" style="width: 100%;" :disabled="sections.length === 0">
+            <el-option
+              v-for="section in sections"
+              :key="section.id"
+              :label="getLocalized(section.title) || section.id"
+              :value="section.id"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="Название (RU)" prop="titleRu">
+          <el-input v-model="articleForm.titleRu" placeholder="Название на русском" />
+        </el-form-item>
+        <el-form-item label="Название (EN)" prop="titleEn">
+          <el-input v-model="articleForm.titleEn" placeholder="Название на английском" />
+        </el-form-item>
+        <el-form-item label="Абстракт (RU)">
+          <el-input v-model="articleForm.abstractRu" type="textarea" :rows="3" placeholder="Абстракт на русском" />
+        </el-form-item>
+        <el-form-item label="Абстракт (EN)">
+          <el-input v-model="articleForm.abstractEn" type="textarea" :rows="3" placeholder="Абстракт на английском" />
+        </el-form-item>
+        <el-form-item label="Авторы">
+          <el-input v-model="articleForm.authors" placeholder="ФИО авторов" />
+        </el-form-item>
+        <el-form-item label="Ключевые слова">
+          <el-input v-model="articleForm.keywords" placeholder="Ключевые слова через запятую" />
+        </el-form-item>
+        <el-form-item label="PDF файл">
+          <el-upload
+            drag
+            action="#"
+            :auto-upload="false"
+            :on-change="handlePdfChange"
+            :file-list="pdfFileList"
+            accept=".pdf"
+          >
+            <div class="upload-content">
+              <el-icon :size="40"><Upload /></el-icon>
+              <div>Перетащите PDF сюда или кликните</div>
+            </div>
+          </el-upload>
+        </el-form-item>
+      </el-form>
+
+      <template #footer>
+        <el-button @click="createArticleDialogVisible = false">Отмена</el-button>
+        <el-button type="primary" @click="createArticle" :loading="creatingArticle">
+          Создать и добавить
+        </el-button>
+      </template>
+    </el-dialog>
+
     <!-- Диалог редактирования статьи -->
     <el-dialog v-model="editArticleDialogVisible" title="Редактировать статью" width="600px">
       <el-form label-width="120px" :model="articleForm">
@@ -184,8 +243,8 @@
 </template>
 
 <script>
-import { ArrowLeft, Document, Download, Plus, Edit, Delete } from '@element-plus/icons-vue'
-import { getIssueDetail, getSubmissions, addArticleToIssue, removeArticleFromIssue } from '@/services/ojs'
+import { ArrowLeft, Document, Download, Plus, Edit, Delete, Upload } from '@element-plus/icons-vue'
+import { getIssueDetail, getSubmissions, addArticleToIssue, removeArticleFromIssue, createSubmission, createPublication, updatePublication, uploadSubmissionFile, catalogSubmission, getSections, getCurrentContextId } from '@/services/ojs'
 import { useAuth } from '@/composables/useAuth'
 import { ROLES } from '@/config/constants'
 
@@ -197,7 +256,8 @@ export default {
     Download,
     Plus,
     Edit,
-    Delete
+    Delete,
+    Upload
   },
   data() {
     return {
@@ -210,16 +270,24 @@ export default {
       submissions: [],
       availableSubmissions: [],
       loadingSubmissions: false,
+      createArticleDialogVisible: false,
       editArticleDialogVisible: false,
       editingArticle: null,
       savingArticle: false,
+      creatingArticle: false,
       articleForm: {
         titleRu: '',
         titleEn: '',
+        abstractRu: '',
+        abstractEn: '',
         authors: '',
+        keywords: '',
+        pdfFile: null,
         pages: '',
-        status: 'submitted'
-      }
+        sectionId: null
+      },
+      pdfFileList: [],
+      sections: []
     }
   },
   computed: {
@@ -402,6 +470,162 @@ export default {
         .finally(function () {
           self.removing = false
         })
+    },
+    openCreateArticleDialog() {
+      var self = this
+      this.articleForm = {
+        titleRu: '',
+        titleEn: '',
+        abstractRu: '',
+        abstractEn: '',
+        authors: '',
+        keywords: '',
+        pdfFile: null,
+        pages: '',
+        sectionId: null,
+        contextId: null
+      }
+      this.pdfFileList = []
+      this.createArticleDialogVisible = true
+
+      // Загружаем ID журнала и список секций
+      getCurrentContextId()
+        .then(function (contextId) {
+          self.articleForm.contextId = contextId
+          return getSections()
+        })
+        .then(function (sections) {
+          self.sections = sections
+          if (sections.length > 0) {
+            var section = sections[0]
+            console.log('Section object keys:', Object.keys(section))
+            console.log('Section object:', JSON.stringify(section, null, 2))
+            var sectionId = section.id || section.sectionId || section.section_id || section.section
+            // Приводим к number сразу
+            self.articleForm.sectionId = Number(sectionId)
+          } else {
+            self.articleForm.sectionId = 1
+          }
+        })
+        .catch(function (error) {
+          console.error('Ошибка загрузки данных', error)
+          self.articleForm.sectionId = 1
+        })
+    },
+    handlePdfChange(file) {
+      this.articleForm.pdfFile = file.raw
+    },
+    createArticle() {
+      if (!this.articleForm.titleRu) {
+        this.$message && this.$message.warning('Введите название статьи')
+        return
+      }
+      this.creatingArticle = true
+      var self = this
+
+      // sectionId — обязательно integer
+      if (!this.articleForm.sectionId) this.articleForm.sectionId = 1
+      var sectionId = parseInt(this.articleForm.sectionId, 10)
+
+      // authors: строка ФИО -> массив объектов авторов (формат OJS API)
+      var authors = []
+      var authorNames = (this.articleForm.authors || '')
+        .split(/[,\n;]/)
+        .map(function (s) { return s.trim() })
+        .filter(Boolean)
+      authorNames.forEach(function (name) {
+        var parts = name.split(/\s+/)
+        var givenName = parts.shift() || name
+        var familyName = parts.join(' ') || name
+        authors.push({
+          givenName: { ru: givenName },
+          familyName: { ru: familyName }
+        })
+      })
+
+      // keywords: строка через запятую -> { ru: [...] } (формат OJS API)
+      var keywords = {}
+      var kwList = (this.articleForm.keywords || '')
+        .split(',')
+        .map(function (s) { return s.trim() })
+        .filter(Boolean)
+      if (kwList.length) {
+        keywords = { ru: kwList }
+      }
+
+      // 1. Создаём «каркас» submission.
+      // ВНИМАНИЕ: OJS сам определяет contextId по API-ключу — поле contextId
+      // передавать в теле нельзя, иначе 400 "Свойство contextId не может быть изменено".
+      var submissionData = {
+        sectionId: sectionId,
+        locale: 'ru'
+      }
+
+      createSubmission(submissionData)
+        .then(function (submission) {
+          var submissionId = submission.id || submission.submissionId
+          if (!submissionId) {
+            throw new Error('Не получен ID submission')
+          }
+
+          // OJS уже создал publication v1 при createSubmission.
+          // Берём её id (currentPublicationId / publications[0].id).
+          var publicationId = submission.currentPublicationId ||
+            (submission.publications && submission.publications[0] && submission.publications[0].id)
+
+          if (!publicationId) {
+            throw new Error('Не получен ID publication')
+          }
+
+          // 2. Записываем метаданные в существующую publication (PUT).
+          // Журнал принимает только локаль ru, поэтому en-поля не отправляем
+          // (иначе 400 "Данный язык не принимается").
+          var publicationData = {
+            version: 1,
+            title: { ru: self.articleForm.titleRu },
+            abstract: self.articleForm.abstractRu
+              ? { ru: self.articleForm.abstractRu }
+              : undefined,
+            sectionId: sectionId,
+            authors: authors,
+            keywords: keywords
+          }
+          Object.keys(publicationData).forEach(function (key) {
+            if (publicationData[key] === undefined) {
+              delete publicationData[key]
+            }
+          })
+
+          return updatePublication(submissionId, publicationId, publicationData)
+            .then(function () {
+              // 3. Загружаем PDF-файл, если выбран
+              if (self.articleForm.pdfFile) {
+                return uploadSubmissionFile(submissionId, self.articleForm.pdfFile, 'ru')
+                  .catch(function (err) {
+                    console.error('Ошибка загрузки PDF (продолжаем без файла):', err)
+                  })
+              }
+            })
+            .then(function () {
+              // 4. Назначаем статью в текущий выпуск.
+              // В этой версии OJS назначение выпуска делается через publication.issueId
+              // (маршрута /issues/{id}/catalog не существует).
+              return catalogSubmission(self.issue.id, submissionId)
+            })
+        })
+        .then(function () {
+          console.log('✓ Статья создана и добавлена в выпуск')
+          self.$message && self.$message.success('Статья создана и добавлена в выпуск')
+          self.createArticleDialogVisible = false
+          self.loadIssue()
+        })
+        .catch(function (error) {
+          console.error('✗ Ошибка создания статьи:', error)
+          self.$message && self.$message.error(error.message || 'Не удалось создать статью')
+        })
+        .finally(function () {
+          self.creatingArticle = false
+        })
     }
   }
 }
@@ -567,5 +791,13 @@ export default {
 .section-actions {
   display: flex;
   gap: 8px;
+}
+
+.upload-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 20px;
 }
 </style>
