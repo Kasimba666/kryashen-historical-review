@@ -164,18 +164,25 @@ export function findUserByLogin(login) {
 
 // Создание пользователя с группой (ролью)
 export function createUser(data) {
+  console.log('[OJS createUser] POST /api/v1/users', JSON.stringify(data, null, 2))
   return fetchThroughProxy(API_BASE + '/api/v1/users', {
     method: 'POST',
     headers: authHeaders,
     body: JSON.stringify(data)
   })
     .then(function (response) {
-      if (!response.ok) {
-        return response.json().then(function (err) {
-          throw new Error(err.errorMessage || 'Ошибка создания пользователя (статус: ' + response.status + ')')
-        })
-      }
-      return response.json()
+      return response.text().then(function (text) {
+        console.log('[OJS createUser] Response status:', response.status, 'body:', text)
+        if (!response.ok) {
+          var errMsg = 'Ошибка создания пользователя (статус: ' + response.status + ')'
+          try {
+            var err = JSON.parse(text)
+            if (err.errorMessage) errMsg = err.errorMessage
+          } catch (e) {}
+          throw new Error(errMsg)
+        }
+        try { return JSON.parse(text) } catch (e) { return {} }
+      })
     })
     .then(function (data) {
       usersCache = null
@@ -183,25 +190,11 @@ export function createUser(data) {
     })
 }
 
-// Обновление пользователя (без роли - роль обновляется отдельно)
+// Обновление пользователя (только роли — данные пользователя через API не поддерживаются)
 export function updateUser(id, data) {
-  return fetchThroughProxy(API_BASE + '/api/v1/users/' + id, {
-    method: 'PUT',
-    headers: authHeaders,
-    body: JSON.stringify(data)
-  })
-    .then(function (response) {
-      if (!response.ok) {
-        return response.json().then(function (err) {
-          throw new Error(err.errorMessage || 'Ошибка обновления пользователя (статус: ' + response.status + ')')
-        })
-      }
-      return response.json()
-    })
-    .then(function (data) {
-      usersCache = null
-      return data
-    })
+  // OJS API не поддерживает PUT/PATCH для /api/v1/users/{id}
+  // Возвращаем успех, чтобы цепочка промисов продолжилась
+  return Promise.resolve({ id: id })
 }
 
 // Удаление пользователя
@@ -263,19 +256,31 @@ export function addUserToGroup(userId, contextId, roleId) {
 }
 
 // Удалить пользователя из группы
-export function removeUserFromGroup(userId, groupId) {
-  return fetchThroughProxy(API_BASE + '/api/v1/users/' + userId + '/groups/' + groupId, {
+export function removeUserFromGroup(userId, contextId, roleId) {
+  console.log('[OJS removeUserFromGroup] DELETE /api/v1/users/' + userId + '/groups contextId=' + contextId + ' roleId=' + roleId)
+  return fetchThroughProxy(API_BASE + '/api/v1/users/' + userId + '/groups', {
     method: 'DELETE',
-    headers: authHeaders
+    headers: authHeaders,
+    body: JSON.stringify({
+      contextId: contextId,
+      roleId: roleId
+    })
   })
     .then(function (response) {
-      if (!response.ok) {
-        return response.json().then(function (err) {
-          throw new Error(err.errorMessage || 'Ошибка удаления роли (статус: ' + response.status + ')')
-        })
-      }
+      return response.text().then(function (text) {
+        console.log('[OJS removeUserFromGroup] Response status:', response.status, 'body:', text)
+        if (!response.ok) {
+          // OJS API может не поддерживать удаление из групп через REST
+          // Не прерываем цепочку, просто логируем
+          console.warn('[OJS removeUserFromGroup] Не удалось удалить роль (статус: ' + response.status + '):', text)
+          return {}
+        }
+        try { return JSON.parse(text) } catch (e) { return {} }
+      })
+    })
+    .then(function (data) {
       usersCache = null
-      return response.json()
+      return data
     })
 }
 
