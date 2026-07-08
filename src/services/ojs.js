@@ -14,22 +14,15 @@ var usersCache = null
 var usersCacheTime = 0
 
 // Определяем базовый URL для API в зависимости от окружения
-// В development используем относительные пути через прокси
-// В production - прямой URL к OJS серверу
 var API_BASE = OJS_BASE
 if (OJS_BASE === '/kryashen' || OJS_BASE === '/kryashen/') {
-  // Прокси режим (development) - используем относительный путь
   API_BASE = '/kryashen'
 }
-// Для полных URL (production) оставляем OJS_BASE как API_BASE
 
 // ========================================
 // Утилиты
 // ========================================
 
-/**
- * Выполнить fetch через прокси (relative URL - работает везде)
- */
 function fetchThroughProxy(url, options) {
   options = options || {}
   if (!options.credentials) {
@@ -48,25 +41,22 @@ export function getCsrfToken() {
   })
     .then(function (response) {
       if (!response.ok) {
-        throw new Error('OJS недоступен (статус: ' + response.status + '). Проверьте соединение с сервером.')
+        throw new Error('OJS недоступен (статус: ' + response.status + ')')
       }
       return response.text()
     })
     .then(function (html) {
       if (html.trim().startsWith('{') || html.trim().startsWith('[')) {
-        throw new Error('OJS вернул JSON вместо HTML. Проверьте URL в .env: ' + html.substring(0, 200))
+        throw new Error('OJS вернул JSON вместо HTML')
       }
       var match = html.match(/name="csrfToken"\s+(?:value|content)="([^"]+)"/) ||
                   html.match(/"csrfToken":"([^"]+)"/) ||
                   html.match(/csrfToken.*?"([^"]+)"/)
       if (!match) {
         if (html.indexOf('dashboard') !== -1 || html.indexOf('editorial') !== -1) {
-          throw new Error('Сессия уже активна. Выйдите из OJS перед повторным входом.')
+          throw new Error('Сессия уже активна')
         }
-        if (html.indexOf('login-form') === -1 && html.indexOf('loginForm') === -1) {
-          throw new Error('Страница не содержит форму логина. Проверьте URL OJS в .env файле.')
-        }
-        throw new Error('CSRF-токен не найден. Форма: ' + html.substring(0, 300))
+        throw new Error('CSRF-токен не найден')
       }
       return match[1]
     })
@@ -85,7 +75,7 @@ export function login(username, password) {
         credentials: 'include',
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Accept': 'text/html,application/xhtml+xml',
           'Referer': API_BASE + '/ru/login',
           'Origin': window.location.origin
         },
@@ -93,19 +83,13 @@ export function login(username, password) {
       })
     })
     .then(function (response) {
-      var location = response.headers.get('location')
-      if (location && (response.status === 302 || response.status === 301)) {
-        return true
-      }
       if (response.status === 200) {
         return response.text().then(function (text) {
-          if (text.indexOf('dashboard') !== -1 || 
-              text.indexOf('editorial') !== -1 ||
-              text.indexOf('profile') !== -1) {
+          if (text.indexOf('dashboard') !== -1 || text.indexOf('editorial') !== -1 || text.indexOf('profile') !== -1) {
             return true
           }
-          if (text.indexOf('login-form') !== -1 || text.indexOf('loginForm') !== -1) {
-            throw new Error('Неверное имя пользователя (email) или пароль')
+          if (text.indexOf('login-form') !== -1) {
+            throw new Error('Неверное имя пользователя или пароль')
           }
           return true
         })
@@ -126,10 +110,7 @@ export function logout() {
     method: 'GET',
     credentials: 'include',
     redirect: 'manual'
-  })
-    .then(function () {
-      return true
-    })
+  }).then(function () { return true })
 }
 
 // ========================================
@@ -145,7 +126,7 @@ export function getUsers() {
   })
     .then(function (response) {
       if (!response.ok) {
-        throw new Error('Ошибка получения списка пользователей (статус: ' + response.status + ')')
+        throw new Error('Ошибка получения пользователей (статус: ' + response.status + ')')
       }
       return response.json()
     })
@@ -177,10 +158,124 @@ export function findUserByLogin(login) {
         if (u.userName && u.userName.toLowerCase() === login) return u
         if (u.email && u.email.toLowerCase() === login) return u
       }
-      throw new Error('Пользователь с таким именем или email не найден')
+      throw new Error('Пользователь не найден')
     })
-    .catch(function (error) {
-      throw new Error('Не удалось найти пользователя: ' + error.message)
+}
+
+// Создание пользователя с группой (ролью)
+export function createUser(data) {
+  return fetchThroughProxy(API_BASE + '/api/v1/users', {
+    method: 'POST',
+    headers: authHeaders,
+    body: JSON.stringify(data)
+  })
+    .then(function (response) {
+      if (!response.ok) {
+        return response.json().then(function (err) {
+          throw new Error(err.errorMessage || 'Ошибка создания пользователя (статус: ' + response.status + ')')
+        })
+      }
+      return response.json()
+    })
+    .then(function (data) {
+      usersCache = null
+      return data
+    })
+}
+
+// Обновление пользователя (без роли - роль обновляется отдельно)
+export function updateUser(id, data) {
+  return fetchThroughProxy(API_BASE + '/api/v1/users/' + id, {
+    method: 'PUT',
+    headers: authHeaders,
+    body: JSON.stringify(data)
+  })
+    .then(function (response) {
+      if (!response.ok) {
+        return response.json().then(function (err) {
+          throw new Error(err.errorMessage || 'Ошибка обновления пользователя (статус: ' + response.status + ')')
+        })
+      }
+      return response.json()
+    })
+    .then(function (data) {
+      usersCache = null
+      return data
+    })
+}
+
+// Удаление пользователя
+export function deleteUser(id) {
+  return fetchThroughProxy(API_BASE + '/api/v1/users/' + id, {
+    method: 'DELETE',
+    headers: authHeaders
+  })
+    .then(function (response) {
+      if (!response.ok) {
+        return response.json().then(function (err) {
+          throw new Error(err.errorMessage || 'Ошибка удаления пользователя (статус: ' + response.status + ')')
+        })
+      }
+      return response.json()
+    })
+    .then(function (data) {
+      usersCache = null
+      return data
+    })
+}
+
+// ========================================
+// Группы пользователей (роли)
+// ========================================
+
+// Получить список групп (contexts) для назначения ролей
+export function getContexts() {
+  return fetchThroughProxy(API_BASE + '/api/v1/contexts', {
+    headers: authHeaders
+  })
+    .then(function (response) {
+      if (!response.ok) {
+        throw new Error('Ошибка получения контекстов (статус: ' + response.status + ')')
+      }
+      return response.json()
+    })
+}
+
+// Добавить пользователя в группу (назначить роль)
+export function addUserToGroup(userId, contextId, roleId) {
+  return fetchThroughProxy(API_BASE + '/api/v1/users/' + userId + '/groups', {
+    method: 'POST',
+    headers: authHeaders,
+    body: JSON.stringify({
+      contextId: contextId,
+      roleId: roleId
+    })
+  })
+    .then(function (response) {
+      if (!response.ok) {
+        return response.json().then(function (err) {
+          throw new Error(err.errorMessage || 'Ошибка назначения роли (статус: ' + response.status + ')')
+        })
+      }
+      usersCache = null
+      return response.json()
+    })
+}
+
+// Удалить пользователя из группы
+export function removeUserFromGroup(userId, groupId) {
+  return fetchThroughProxy(API_BASE + '/api/v1/users/' + userId + '/groups/' + groupId, {
+    method: 'DELETE',
+    headers: authHeaders
+  })
+    .then(function (response) {
+      if (!response.ok) {
+        return response.json().then(function (err) {
+          throw new Error(err.errorMessage || 'Ошибка удаления роли (статус: ' + response.status + ')')
+        })
+      }
+      usersCache = null
+      return response.json()
     })
 }
 

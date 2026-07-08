@@ -24,6 +24,10 @@
                         <span class="dropdown-roles">{{ roleNames }}</span>
                       </div>
                     </el-dropdown-item>
+                    <el-dropdown-item v-if="canManageUsers" command="users">
+                      <el-icon :size="14"><Setting /></el-icon>
+                      Пользователи
+                    </el-dropdown-item>
                     <el-dropdown-item divided command="logout">
                       <el-icon :size="14"><SwitchButton /></el-icon>
                       Выйти
@@ -64,7 +68,7 @@
 </template>
 
 <script>
-import { Reading, Moon, Sunny, User, UserFilled, SwitchButton, ArrowDown } from '@element-plus/icons-vue'
+import { Reading, Moon, Sunny, User, UserFilled, SwitchButton, ArrowDown, Setting } from '@element-plus/icons-vue'
 import { useTheme } from '@/composables/useTheme'
 import { useAuth } from '@/composables/useAuth'
 
@@ -77,7 +81,8 @@ export default {
     User,
     UserFilled,
     SwitchButton,
-    ArrowDown
+    ArrowDown,
+    Setting
   },
   data() {
     return {
@@ -85,7 +90,8 @@ export default {
       isAuthenticated: false,
       displayName: '',
       username: '',
-      roleNames: ''
+      roleNames: '',
+      canManageUsers: false
     }
   },
   mounted() {
@@ -106,10 +112,12 @@ export default {
 
         var roles = auth.getRoleNames()
         this.roleNames = roles.map(function (r) { return r.name }).join(', ')
+        this.canManageUsers = auth.hasRole(16) || auth.hasRole(17)
       } else {
         this.displayName = ''
         this.username = ''
         this.roleNames = ''
+        this.canManageUsers = false
       }
     },
     toggleTheme() {
@@ -123,6 +131,8 @@ export default {
     handleDropdownCommand(command) {
       if (command === 'logout') {
         this.handleLogout()
+      } else if (command === 'users') {
+        this.$router.push('/users')
       }
     },
     handleLogout() {

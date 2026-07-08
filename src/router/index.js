@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import JournalPage from '@/pages/JournalPage.vue'
 import IssueDetailPage from '@/pages/IssueDetailPage.vue'
 import LoginPage from '@/pages/LoginPage.vue'
+import UsersPage from '@/pages/UsersPage.vue'
 import { authMiddleware } from '@/composables/useAuthorization'
 
 const router = createRouter({
@@ -22,6 +23,15 @@ const router = createRouter({
       path: '/login',
       name: 'login',
       component: LoginPage
+    },
+    {
+      path: '/users',
+      name: 'users',
+      component: UsersPage,
+      meta: { 
+        requiresAuth: true,
+        roles: [16, 17] // Journal Manager (16) или Editor (17)
+      }
     }
   ],
 })

@@ -48,7 +48,7 @@ export function useAuthorization() {
 /**
  * Middleware для авторизации
  * Использовать в router/index.js:
- * router.beforeEach(useAuthorization().checkAccess)
+ * router.beforeEach(authMiddleware)
  */
 export function authMiddleware(to) {
   var auth = useAuth()
@@ -62,6 +62,16 @@ export function authMiddleware(to) {
   // Если пользователь авторизован и пытается зайти на страницу логина
   if (to.path === '/login' && isAuthenticated) {
     return '/'
+  }
+
+  // Проверка ролей (если указаны в meta.roles)
+  if (to.meta && to.meta.roles && to.meta.roles.length > 0) {
+    var hasRequiredRole = to.meta.roles.some(function (roleId) {
+      return auth.hasRole(roleId)
+    })
+    if (!hasRequiredRole) {
+      return '/'
+    }
   }
 
   return true
