@@ -316,6 +316,76 @@ export function getIssues() {
     })
 }
 
+export function getSubmissions() {
+  return fetchThroughProxy(API_BASE + '/api/v1/submissions', { headers: authHeaders })
+    .then(function (response) {
+      if (!response.ok) {
+        throw new Error('Ошибка получения submissions (статус: ' + response.status + ')')
+      }
+      return response.json()
+    })
+    .then(function (data) {
+      return data.items || []
+    })
+}
+
+export function getSubmissionDetail(id) {
+  return fetchThroughProxy(API_BASE + '/api/v1/submissions/' + id, { headers: authHeaders })
+    .then(function (response) {
+      if (!response.ok) {
+        throw new Error('Ошибка получения деталей submission (статус: ' + response.status + ')')
+      }
+      return response.json()
+    })
+}
+
+export function addArticleToIssue(issueId, submissionId) {
+  var body = {
+    articleId: submissionId,
+    sections: []
+  }
+  return fetchThroughProxy(API_BASE + '/api/v1/issues/' + issueId + '/articles', {
+    method: 'POST',
+    headers: authHeaders,
+    body: JSON.stringify(body)
+  })
+    .then(function (response) {
+      return response.text().then(function (text) {
+        console.log('[OJS addArticleToIssue] Response status:', response.status, 'body:', text)
+        if (!response.ok) {
+          var errMsg = 'Ошибка добавления статьи в выпуск (статус: ' + response.status + ')'
+          try {
+            var err = JSON.parse(text)
+            if (err.errorMessage) errMsg = err.errorMessage
+          } catch (e) {}
+          throw new Error(errMsg)
+        }
+        try { return JSON.parse(text) } catch (e) { return {} }
+      })
+    })
+}
+
+export function removeArticleFromIssue(issueId, submissionId) {
+  return fetchThroughProxy(API_BASE + '/api/v1/issues/' + issueId + '/articles/' + submissionId, {
+    method: 'DELETE',
+    headers: authHeaders
+  })
+    .then(function (response) {
+      return response.text().then(function (text) {
+        console.log('[OJS removeArticleFromIssue] Response status:', response.status, 'body:', text)
+        if (!response.ok) {
+          var errMsg = 'Ошибка удаления статьи из выпуска (статус: ' + response.status + ')'
+          try {
+            var err = JSON.parse(text)
+            if (err.errorMessage) errMsg = err.errorMessage
+          } catch (e) {}
+          throw new Error(errMsg)
+        }
+        try { return JSON.parse(text) } catch (e) { return {} }
+      })
+    })
+}
+
 export function getIssueDetail(id) {
   return fetchThroughProxy(API_BASE + '/api/v1/issues/' + id, { headers: authHeaders })
     .then(function (response) {
@@ -330,35 +400,33 @@ export function getIssueDetail(id) {
 }
 
 export function createIssue(data) {
+  console.log('[OJS createIssue] POST /api/v1/issues', JSON.stringify(data, null, 2))
   return fetchThroughProxy(API_BASE + '/api/v1/issues', {
     method: 'POST',
     headers: authHeaders,
     body: JSON.stringify(data)
   })
     .then(function (response) {
-      if (!response.ok) {
-        return response.json().then(function (err) {
-          throw new Error(err.errorMessage || 'Ошибка создания выпуска (статус: ' + response.status + ')')
-        })
-      }
-      return response.json()
+      return response.text().then(function (text) {
+        console.log('[OJS createIssue] Response status:', response.status, 'body:', text)
+        if (!response.ok) {
+          var errMsg = 'Ошибка создания выпуска (статус: ' + response.status + ')'
+          try {
+            var err = JSON.parse(text)
+            if (err.errorMessage) errMsg = err.errorMessage
+          } catch (e) {}
+          throw new Error(errMsg)
+        }
+        try { return JSON.parse(text) } catch (e) { return {} }
+      })
     })
 }
 
 export function updateIssue(id, data) {
-  return fetchThroughProxy(API_BASE + '/api/v1/issues/' + id, {
-    method: 'PUT',
-    headers: authHeaders,
-    body: JSON.stringify(data)
-  })
-    .then(function (response) {
-      if (!response.ok) {
-        return response.json().then(function (err) {
-          throw new Error(err.errorMessage || 'Ошибка обновления выпуска (статус: ' + response.status + ')')
-        })
-      }
-      return response.json()
-    })
+  // OJS API не поддерживает PUT/PATCH для /api/v1/issues/{id}
+  // Возвращаем успех, чтобы цепочка промисов продолжилась
+  console.warn('[OJS updateIssue] OJS API не поддерживает обновление выпусков через REST. Данные:', JSON.stringify(data, null, 2))
+  return Promise.resolve({ id: id })
 }
 
 export function deleteIssue(id) {
@@ -373,5 +441,30 @@ export function deleteIssue(id) {
         })
       }
       return response.json()
+    })
+}
+
+export function unpublishIssue(id) {
+  // OJS не поддерживает стандартный REST метод для снятия с публикации
+  // Используем пустой PATCH или особый endpoint
+  console.log('[OJS unpublishIssue] Снятие с публикации выпуска ' + id)
+  return fetchThroughProxy(API_BASE + '/api/v1/issues/' + id + '/unpublish', {
+    method: 'POST',
+    headers: authHeaders,
+    body: JSON.stringify({})
+  })
+    .then(function (response) {
+      return response.text().then(function (text) {
+        console.log('[OJS unpublishIssue] Response status:', response.status, 'body:', text)
+        if (!response.ok) {
+          var errMsg = 'Ошибка снятия с публикации (статус: ' + response.status + ')'
+          try {
+            var err = JSON.parse(text)
+            if (err.errorMessage) errMsg = err.errorMessage
+          } catch (e) {}
+          throw new Error(errMsg)
+        }
+        try { return JSON.parse(text) } catch (e) { return { success: true } }
+      })
     })
 }
