@@ -19,8 +19,8 @@
                 <el-tag v-if="issue.volume" type="info">Том {{ issue.volume }}</el-tag>
                 <el-tag v-if="issue.number" type="info">№ {{ issue.number }}</el-tag>
                 <el-tag v-if="issue.year" type="info">{{ issue.year }}</el-tag>
-                <el-tag v-if="isPublished" type="success">Опубликован</el-tag>
-                <el-tag v-else type="warning">Черновик</el-tag>
+                <el-tag v-if="issue.published" type="success">Опубликован</el-tag>
+                <el-tag v-if="!issue.published" type="warning">Черновик</el-tag>
               </div>
               <p v-if="issue.identification" class="issue-identification">{{ issue.identification }}</p>
             </div>
@@ -78,7 +78,7 @@
                 </el-tag>
               </div>
             </div>
-    <div v-if="canManageArticles && !isPublished" class="article-actions" @click.stop>
+    <div v-if="canManageArticles && !issue.published" class="article-actions" @click.stop>
               <el-button
                 size="small"
                 @click="openEditArticleDialog(article)"
@@ -238,11 +238,6 @@ export default {
     articles: function () {
       if (!this.issue) return []
       return this.issue.articles || []
-    },
-    isPublished: function () {
-      if (!this.issue) return false
-      // OJS uses boolean `published` field to indicate if issue is published
-      return this.issue.published === true
     },
     canManageArticles: function () {
       var auth = useAuth()

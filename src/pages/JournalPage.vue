@@ -83,9 +83,12 @@
           <el-input-number v-model="form.year" :min="1900" :max="2100" :step="1" style="width: 100%;" />
         </el-form-item>
         <el-form-item label="Опубликовать">
-          <el-switch v-model="form.published" :active-value="1" :inactive-value="0" />
+          <el-switch v-model="form.published" :active-value="1" :inactive-value="0" disabled />
+          <span style="font-size: 0.8rem; color: var(--el-text-color-secondary); margin-left: 8px;">
+            Изменяется через админку OJS
+          </span>
         </el-form-item>
-        <el-form-item label="Дата публикации">
+        <el-form-item v-if="editingIssue && editingIssue.published" label="Дата публикации">
           <el-date-picker
             v-model="form.datePublished"
             type="date"
@@ -94,9 +97,6 @@
             value-format="YYYY-MM-DD"
             style="width: 100%;"
           />
-        </el-form-item>
-        <el-form-item label="Доступен">
-          <el-switch v-model="form.openAccess" :active-value="1" :inactive-value="0" />
         </el-form-item>
       </el-form>
 
@@ -158,8 +158,7 @@ export default {
         number: 0,
         year: new Date().getFullYear(),
         published: 0,
-        datePublished: '',
-        openAccess: 0
+        datePublished: ''
       },
       formRules: {
         titleRu: [
@@ -219,9 +218,8 @@ export default {
         volume: (vol !== null && vol !== undefined) ? Number(vol) : 0,
         number: (num !== null && num !== undefined) ? Number(num) : 0,
         year: (yr !== null && yr !== undefined) ? Number(yr) : new Date().getFullYear(),
-        published: issue.datePublished ? 1 : 0,
-        datePublished: issue.datePublished || '',
-        openAccess: issue.accessStatus || 0
+        published: issue.published ? 1 : 0,
+        datePublished: issue.datePublished || ''
       }
 
       this.dialogVisible = true
@@ -236,8 +234,7 @@ export default {
         number: 0,
         year: new Date().getFullYear(),
         published: 0,
-        datePublished: '',
-        openAccess: 0
+        datePublished: ''
       }
     },
     submitForm() {
@@ -259,7 +256,6 @@ export default {
         if (self.form.volume) issueData.volume = self.form.volume
         if (self.form.number) issueData.number = self.form.number
         if (self.form.year) issueData.year = self.form.year
-        if (self.form.openAccess === 1) issueData.accessStatus = 1
 
         if (self.form.published && self.form.datePublished) {
           issueData.datePublished = self.form.datePublished
