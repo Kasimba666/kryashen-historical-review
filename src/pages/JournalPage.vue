@@ -188,7 +188,6 @@ export default {
           this.issues = data
         }.bind(this))
         .catch(function (error) {
-          console.error(error)
           this.issues = []
         }.bind(this))
         .finally(function () {
@@ -270,7 +269,6 @@ export default {
             self.loadIssues()
           })
           .catch(function (error) {
-            console.error('Ошибка сохранения выпуска', error)
             self.$message && self.$message.error(error.message || 'Не удалось сохранить выпуск')
           })
           .finally(function () {
@@ -297,7 +295,6 @@ export default {
           self.loadIssues()
         })
         .catch(function (error) {
-          console.error('Ошибка удаления выпуска', error)
           self.$message && self.$message.error(error.message || 'Не удалось удалить выпуск')
         })
         .finally(function () {

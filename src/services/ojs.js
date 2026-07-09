@@ -108,7 +108,6 @@ export function login(username, password) {
       throw new Error('Ошибка сервера: ' + response.status)
     })
     .catch(function (error) {
-      console.error('[OJS Login Error]', error)
       throw error
     })
 }
@@ -172,7 +171,6 @@ export function findUserByLogin(login) {
 
 // Создание пользователя с группой (ролью)
 export function createUser(data) {
-  console.log('[OJS createUser] POST /api/v1/users', JSON.stringify(data, null, 2))
   return fetchThroughProxy(API_BASE + '/api/v1/users', {
     method: 'POST',
     headers: jsonAuthHeaders,
@@ -180,7 +178,6 @@ export function createUser(data) {
   })
     .then(function (response) {
       return response.text().then(function (text) {
-        console.log('[OJS createUser] Response status:', response.status, 'body:', text)
         if (!response.ok) {
           var errMsg = 'Ошибка создания пользователя (статус: ' + response.status + ')'
           try {
@@ -265,7 +262,6 @@ export function addUserToGroup(userId, contextId, roleId) {
 
 // Удалить пользователя из группы
 export function removeUserFromGroup(userId, contextId, roleId) {
-  console.log('[OJS removeUserFromGroup] DELETE /api/v1/users/' + userId + '/groups contextId=' + contextId + ' roleId=' + roleId)
   return fetchThroughProxy(API_BASE + '/api/v1/users/' + userId + '/groups', {
     method: 'DELETE',
     headers: jsonAuthHeaders,
@@ -276,11 +272,9 @@ export function removeUserFromGroup(userId, contextId, roleId) {
   })
     .then(function (response) {
       return response.text().then(function (text) {
-        console.log('[OJS removeUserFromGroup] Response status:', response.status, 'body:', text)
         if (!response.ok) {
           // OJS API может не поддерживать удаление из групп через REST
           // Не прерываем цепочку, просто логируем
-          console.warn('[OJS removeUserFromGroup] Не удалось удалить роль (статус: ' + response.status + '):', text)
           return {}
         }
         try { return JSON.parse(text) } catch (e) { return {} }
@@ -306,7 +300,6 @@ export function getJournalInfo() {
     })
     .then(function (data) {
       var journal = data.items && data.items.length > 0 ? data.items[0] : null
-      console.log('[OJS getJournalInfo] Journal data:', JSON.stringify(journal, null, 2))
       return journal
     })
 }
@@ -374,7 +367,6 @@ export function getSections() {
 
 // Создание submission (статьи)
 export function createSubmission(data) {
-  console.log('[OJS createSubmission] POST /api/v1/submissions', JSON.stringify(data, null, 2))
   return fetchThroughProxy(API_BASE + '/api/v1/submissions', {
     method: 'POST',
     headers: jsonAuthHeaders,
@@ -382,7 +374,6 @@ export function createSubmission(data) {
   })
     .then(function (response) {
       return response.text().then(function (text) {
-        console.log('[OJS createSubmission] Response status:', response.status, 'body:', text)
         if (!response.ok) {
           var errMsg = 'Ошибка создания submission (статус: ' + response.status + ')'
           try {
@@ -398,7 +389,6 @@ export function createSubmission(data) {
 
 // Создание publication для submission
 export function createPublication(submissionId, data) {
-  console.log('[OJS createPublication] POST /api/v1/submissions/' + submissionId + '/publications', JSON.stringify(data, null, 2))
   return fetchThroughProxy(API_BASE + '/api/v1/submissions/' + submissionId + '/publications', {
     method: 'POST',
     headers: jsonAuthHeaders,
@@ -406,7 +396,6 @@ export function createPublication(submissionId, data) {
   })
     .then(function (response) {
       return response.text().then(function (text) {
-        console.log('[OJS createPublication] Response status:', response.status, 'body:', text)
         if (!response.ok) {
           var errMsg = 'Ошибка создания publication (статус: ' + response.status + ')'
           try {
@@ -424,7 +413,6 @@ export function createPublication(submissionId, data) {
 // OJS при createSubmission уже создаёт publication v1, поэтому метаданные
 // нужно записывать в неё через PUT, а не создавать вторую через POST.
 export function updatePublication(submissionId, publicationId, data) {
-  console.log('[OJS updatePublication] PUT /api/v1/submissions/' + submissionId + '/publications/' + publicationId, JSON.stringify(data, null, 2))
   return fetchThroughProxy(API_BASE + '/api/v1/submissions/' + submissionId + '/publications/' + publicationId, {
     method: 'PUT',
     headers: jsonAuthHeaders,
@@ -432,7 +420,6 @@ export function updatePublication(submissionId, publicationId, data) {
   })
     .then(function (response) {
       return response.text().then(function (text) {
-        console.log('[OJS updatePublication] Response status:', response.status, 'body:', text)
         if (!response.ok) {
           var errMsg = 'Ошибка обновления publication (статус: ' + response.status + ')'
           try {
@@ -452,7 +439,7 @@ export function uploadSubmissionFile(submissionId, file, locale) {
   formData.append('file', file)
   formData.append('locale', locale || 'ru')
   formData.append('stage', 'submission')
-  
+
   return fetchThroughProxy(API_BASE + '/api/v1/submissions/' + submissionId + '/files', {
     method: 'POST',
     headers: authHeaders,
@@ -460,9 +447,36 @@ export function uploadSubmissionFile(submissionId, file, locale) {
   })
     .then(function (response) {
       return response.text().then(function (text) {
-        console.log('[OJS uploadSubmissionFile] Response status:', response.status, 'body:', text)
         if (!response.ok) {
           var errMsg = 'Ошибка загрузки файла (статус: ' + response.status + ')'
+          try {
+            var err = JSON.parse(text)
+            if (err.errorMessage) errMsg = err.errorMessage
+          } catch (e) {}
+          throw new Error(errMsg)
+        }
+        try { return JSON.parse(text) } catch (e) { return {} }
+      })
+    })
+}
+
+// Создание galley (представления файла) для publication.
+// После загрузки файла в submission его нужно прикрепить к publication как galley,
+// иначе PDF не отображается в выпуске.
+export function createGalley(submissionId, publicationId, fileId, locale) {
+  return fetchThroughProxy(API_BASE + '/api/v1/submissions/' + submissionId + '/publications/' + publicationId + '/galleys', {
+    method: 'POST',
+    headers: jsonAuthHeaders,
+    body: JSON.stringify({
+      fileId: fileId,
+      label: 'PDF',
+      locale: locale || 'ru'
+    })
+  })
+    .then(function (response) {
+      return response.text().then(function (text) {
+        if (!response.ok) {
+          var errMsg = 'Ошибка создания galley (статус: ' + response.status + ')'
           try {
             var err = JSON.parse(text)
             if (err.errorMessage) errMsg = err.errorMessage
@@ -486,7 +500,6 @@ export function submitToProduction(submissionId) {
   })
     .then(function (response) {
       return response.text().then(function (text) {
-        console.log('[OJS submitToProduction] Response status:', response.status, 'body:', text)
         if (!response.ok) {
           var errMsg = 'Ошибка перевода в production (статус: ' + response.status + ')'
           try {
@@ -516,35 +529,99 @@ function assignPublicationToIssue(submissionId, issueId) {
     })
 }
 
+// ========================================
+// Авторы (contributors) публикации
+// В этой версии OJS REST API авторы создаются через маршрут contributors
+// (PUT publication с полем authors игнорируется, отдельного /authors нет).
+// Авторская группа "Автор" имеет userGroupId = 14.
+// ========================================
+
+// Получить список contributors публикации
+export function getContributors(submissionId, publicationId) {
+  return fetchThroughProxy(
+    API_BASE + '/api/v1/submissions/' + submissionId + '/publications/' + publicationId + '/contributors',
+    { headers: authHeaders }
+  )
+    .then(function (response) {
+      if (!response.ok) {
+        throw new Error('Ошибка получения авторов (статус: ' + response.status + ')')
+      }
+      return response.json()
+    })
+    .then(function (data) {
+      return data.items || []
+    })
+}
+
+// Создать contributor (автора) для публикации
+export function createContributor(submissionId, publicationId, contributor) {
+  return fetchThroughProxy(
+    API_BASE + '/api/v1/submissions/' + submissionId + '/publications/' + publicationId + '/contributors',
+    {
+      method: 'POST',
+      headers: jsonAuthHeaders,
+      body: JSON.stringify(contributor)
+    }
+  )
+    .then(function (response) {
+      return response.text().then(function (text) {
+        if (!response.ok) {
+          var errMsg = 'Ошибка создания автора (статус: ' + response.status + ')'
+          try {
+            var err = JSON.parse(text)
+            if (err.errorMessage) errMsg = err.errorMessage
+          } catch (e) {}
+          throw new Error(errMsg)
+        }
+        try { return JSON.parse(text) } catch (e) { return {} }
+      })
+    })
+}
+
+// Удалить конкретного contributor
+export function deleteContributor(submissionId, publicationId, contributorId) {
+  return fetchThroughProxy(
+    API_BASE + '/api/v1/submissions/' + submissionId + '/publications/' + publicationId + '/contributors/' + contributorId,
+    {
+      method: 'DELETE',
+      headers: authHeaders
+    }
+  )
+    .then(function (response) {
+      if (!response.ok) {
+        return response.json().then(function (err) {
+          throw new Error(err.errorMessage || 'Ошибка удаления автора (статус: ' + response.status + ')')
+        })
+      }
+      return response.json()
+    })
+}
+
+// ID группы "Автор" в этом журнале
+export var AUTHOR_USER_GROUP_ID = 14
+
 // Связывание submission с issue (через publication.issueId)
 export function catalogSubmission(issueId, submissionId) {
-  console.log('[OJS catalogSubmission] Назначаем submission ' + submissionId + ' в выпуск ' + issueId)
   return assignPublicationToIssue(submissionId, issueId)
     .then(function (data) {
-      console.log('[OJS catalogSubmission] ✓ Назначено в выпуск')
       return data
     })
     .catch(function (error) {
-      console.error('[OJS catalogSubmission] Ошибка:', error)
       throw error
     })
 }
 
 export function addArticleToIssue(issueId, submissionId) {
-  console.log('[OJS addArticleToIssue] Назначаем submission ' + submissionId + ' в выпуск ' + issueId)
   return assignPublicationToIssue(submissionId, issueId)
     .then(function (data) {
-      console.log('[OJS addArticleToIssue] ✓ Назначено в выпуск')
       return data
     })
     .catch(function (error) {
-      console.error('[OJS addArticleToIssue] Ошибка:', error)
       throw error
     })
 }
 
 export function removeArticleFromIssue(issueId, submissionId) {
-  console.log('[OJS removeArticleFromIssue] Снимаем submission ' + submissionId + ' с выпуска ' + issueId)
   return getSubmissionDetail(submissionId)
     .then(function (submission) {
       var publicationId = submission.currentPublicationId ||
@@ -556,11 +633,9 @@ export function removeArticleFromIssue(issueId, submissionId) {
       return updatePublication(submissionId, publicationId, { issueId: null })
     })
     .then(function (data) {
-      console.log('[OJS removeArticleFromIssue] ✓ Снято с выпуска')
       return data
     })
     .catch(function (error) {
-      console.error('[OJS removeArticleFromIssue] Ошибка:', error)
       throw error
     })
 }
@@ -579,7 +654,6 @@ export function getIssueDetail(id) {
 }
 
 export function createIssue(data) {
-  console.log('[OJS createIssue] POST /api/v1/issues', JSON.stringify(data, null, 2))
   return fetchThroughProxy(API_BASE + '/api/v1/issues', {
     method: 'POST',
     headers: jsonAuthHeaders,
@@ -587,7 +661,6 @@ export function createIssue(data) {
   })
     .then(function (response) {
       return response.text().then(function (text) {
-        console.log('[OJS createIssue] Response status:', response.status, 'body:', text)
         if (!response.ok) {
           var errMsg = 'Ошибка создания выпуска (статус: ' + response.status + ')'
           try {
@@ -604,7 +677,6 @@ export function createIssue(data) {
 export function updateIssue(id, data) {
   // OJS API не поддерживает PUT/PATCH для /api/v1/issues/{id}
   // Возвращаем успех, чтобы цепочка промисов продолжилась
-  console.warn('[OJS updateIssue] OJS API не поддерживает обновление выпусков через REST. Данные:', JSON.stringify(data, null, 2))
   return Promise.resolve({ id: id })
 }
 
@@ -626,7 +698,6 @@ export function deleteIssue(id) {
 export function unpublishIssue(id) {
   // OJS не поддерживает стандартный REST метод для снятия с публикации
   // Используем пустой PATCH или особый endpoint
-  console.log('[OJS unpublishIssue] Снятие с публикации выпуска ' + id)
   return fetchThroughProxy(API_BASE + '/api/v1/issues/' + id + '/unpublish', {
     method: 'POST',
     headers: jsonAuthHeaders,
@@ -634,7 +705,6 @@ export function unpublishIssue(id) {
   })
     .then(function (response) {
       return response.text().then(function (text) {
-        console.log('[OJS unpublishIssue] Response status:', response.status, 'body:', text)
         if (!response.ok) {
           var errMsg = 'Ошибка снятия с публикации (статус: ' + response.status + ')'
           try {

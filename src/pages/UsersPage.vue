@@ -171,7 +171,6 @@ export default {
           this.users = data
         }.bind(this))
         .catch(function(error) {
-          console.error('Ошибка загрузки пользователей', error)
           this.$message && this.$message.error('Не удалось загрузить пользователей')
         }.bind(this))
         .finally(function() {
@@ -228,7 +227,6 @@ export default {
           }
         }.bind(this))
         .catch(function(error) {
-          console.error('Ошибка загрузки контекста журнала', error)
         })
     },
     
@@ -253,7 +251,6 @@ export default {
           self.loadUsers()
         })
         .catch(function(error) {
-          console.error('Ошибка назначения роли', error)
           self.$message && self.$message.error(error.message)
         })
         .finally(function() {

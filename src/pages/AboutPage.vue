@@ -97,7 +97,6 @@ export default {
           this.journal = data
         }.bind(this))
         .catch(function (error) {
-          console.error(error)
           this.journal = null
         }.bind(this))
         .finally(function () {

@@ -74,14 +74,35 @@
             <div class="article-info">
               <h3 class="article-title">{{ getLocalized(article.title) }}</h3>
               <p v-if="article.authors" class="article-authors">{{ article.authors }}</p>
-              <p v-if="article.pages" class="article-pages">Стр. {{ article.pages }}</p>
+              <p v-if="article.sectionTitle" class="article-section">
+                <el-tag size="small" type="info">{{ article.sectionTitle }}</el-tag>
+              </p>
+              <p v-if="article.abstract && getLocalized(article.abstract)" class="article-abstract">
+                {{ getLocalized(article.abstract) }}
+              </p>
+              <p v-if="article.keywords && article.keywords.length" class="article-keywords">
+                <span class="keyword-label">Ключевые слова: </span>
+                <span v-for="kw in article.keywords" :key="kw" class="keyword-chip">{{ kw }}</span>
+              </p>
+              <div class="article-meta-row">
+                <span v-if="article.pages" class="article-pages">Стр. {{ article.pages }}</span>
+                <el-link
+                  v-if="article.galley"
+                  type="primary"
+                  class="article-galley-link"
+                  :href="article.galley.urlPublished || article.galley.urlRemote"
+                  target="_blank"
+                >
+                  <el-icon><Document /></el-icon> PDF
+                </el-link>
+              </div>
               <div v-if="article.status" class="article-status">
                 <el-tag size="small" :type="getArticleStatusType(article.status)">
                   {{ getArticleStatusLabel(article.status) }}
                 </el-tag>
               </div>
             </div>
-    <div v-if="canManageArticles && !issue.published" class="article-actions" @click.stop>
+            <div v-if="canManageArticles && !issue.published" class="article-actions" @click.stop>
               <el-button
                 size="small"
                 @click="openEditArticleDialog(article)"
@@ -177,7 +198,24 @@
           <el-input v-model="articleForm.abstractEn" type="textarea" :rows="3" placeholder="Абстракт на английском" />
         </el-form-item>
         <el-form-item label="Авторы">
-          <el-input v-model="articleForm.authors" placeholder="ФИО авторов" />
+          <div class="authors-list">
+            <div v-for="(author, idx) in articleForm.authors" :key="idx" class="author-row">
+              <el-input v-model="author.givenName" placeholder="Имя" />
+              <el-input v-model="author.familyName" placeholder="Фамилия" />
+              <el-input v-model="author.email" placeholder="Email*" />
+              <el-button
+                size="small"
+                type="danger"
+                circle
+                @click="removeAuthor(idx)"
+              >
+                <el-icon><Delete /></el-icon>
+              </el-button>
+            </div>
+            <el-button size="small" @click="addAuthor">
+              <el-icon><Plus /></el-icon> Добавить автора
+            </el-button>
+          </div>
         </el-form-item>
         <el-form-item label="Ключевые слова">
           <el-input v-model="articleForm.keywords" placeholder="Ключевые слова через запятую" />
@@ -217,7 +255,24 @@
           <el-input v-model="articleForm.titleEn" placeholder="Название на английском" />
         </el-form-item>
         <el-form-item label="Авторы">
-          <el-input v-model="articleForm.authors" placeholder="ФИО авторов" />
+          <div class="authors-list">
+            <div v-for="(author, idx) in articleForm.authors" :key="idx" class="author-row">
+              <el-input v-model="author.givenName" placeholder="Имя" />
+              <el-input v-model="author.familyName" placeholder="Фамилия" />
+              <el-input v-model="author.email" placeholder="Email*" />
+              <el-button
+                size="small"
+                type="danger"
+                circle
+                @click="removeAuthor(idx)"
+              >
+                <el-icon><Delete /></el-icon>
+              </el-button>
+            </div>
+            <el-button size="small" @click="addAuthor">
+              <el-icon><Plus /></el-icon> Добавить автора
+            </el-button>
+          </div>
         </el-form-item>
         <el-form-item label="Страницы">
           <el-input v-model="articleForm.pages" placeholder="Например: 45-67" />
@@ -244,7 +299,7 @@
 
 <script>
 import { ArrowLeft, Document, Download, Plus, Edit, Delete, Upload } from '@element-plus/icons-vue'
-import { getIssueDetail, getSubmissions, addArticleToIssue, removeArticleFromIssue, createSubmission, createPublication, updatePublication, uploadSubmissionFile, catalogSubmission, getSections, getCurrentContextId } from '@/services/ojs'
+import { getIssueDetail, getSubmissions, addArticleToIssue, removeArticleFromIssue, createSubmission, createPublication, updatePublication, uploadSubmissionFile, createGalley, submitToProduction, catalogSubmission, getSections, getCurrentContextId, getSubmissionDetail, getContributors, createContributor, deleteContributor, AUTHOR_USER_GROUP_ID } from '@/services/ojs'
 import { useAuth } from '@/composables/useAuth'
 import { ROLES } from '@/config/constants'
 
@@ -280,14 +335,17 @@ export default {
         titleEn: '',
         abstractRu: '',
         abstractEn: '',
-        authors: '',
+        authors: [{ givenName: '', familyName: '', email: '' }],
         keywords: '',
         pdfFile: null,
         pages: '',
         sectionId: null
       },
       pdfFileList: [],
-      sections: []
+      sections: [],
+      articlesData: [],
+      _editingSubmissionId: null,
+      _editingPublicationId: null
     }
   },
   computed: {
@@ -304,6 +362,7 @@ export default {
         : (this.issue.description && this.issue.description.en ? this.issue.description.en : '')
     },
     articles: function () {
+      if (this.articlesData && this.articlesData.length) return this.articlesData
       if (!this.issue) return []
       return this.issue.articles || []
     },
@@ -319,6 +378,12 @@ export default {
     getLocalized: function (obj) {
       if (!obj) return ''
       return obj.ru || obj.en || ''
+    },
+    getAuthorFullName: function (author) {
+      if (!author) return ''
+      var given = this.getLocalized(author.givenName)
+      var family = this.getLocalized(author.familyName)
+      return (given + ' ' + family).trim()
     },
     getArticleStatusType: function (status) {
       var types = {
@@ -338,21 +403,149 @@ export default {
       }
       return labels[status] || status || 'Неизвестно'
     },
+    getSectionTitle: function (sectionId) {
+      if (!sectionId || !this.sections.length) return ''
+      for (var i = 0; i < this.sections.length; i++) {
+        if (String(this.sections[i].id) === String(sectionId)) {
+          return this.getLocalized(this.sections[i].title) || sectionId
+        }
+      }
+      return ''
+    },
+    addAuthor: function () {
+      if (!Array.isArray(this.articleForm.authors)) {
+        this.articleForm.authors = []
+      }
+      this.articleForm.authors.push({ givenName: '', familyName: '', email: '' })
+    },
+    removeAuthor: function (idx) {
+      if (!Array.isArray(this.articleForm.authors)) return
+      this.articleForm.authors.splice(idx, 1)
+      if (this.articleForm.authors.length === 0) {
+        this.articleForm.authors.push({ givenName: '', familyName: '', email: '' })
+      }
+    },
+    // Проверка заполненности обязательных полей авторов.
+    // Email обязателен для каждого контрибьютера (требование OJS).
+    validateAuthors: function () {
+      var authors = this.articleForm.authors || []
+      for (var i = 0; i < authors.length; i++) {
+        var a = authors[i] || {}
+        var hasName = (a.givenName && a.givenName.trim()) || (a.familyName && a.familyName.trim())
+        var hasEmail = a.email && a.email.trim()
+        // полностью пустые строки авторов пропускаем
+        if (!hasName && !hasEmail) continue
+        if (!hasName) {
+          return 'Укажите имя и/или фамилию автора (строка ' + (i + 1) + ')'
+        }
+        if (!hasEmail) {
+          return 'Для каждого автора обязателен Email (строка ' + (i + 1) + ')'
+        }
+      }
+      return null
+    },
+    // Объекты авторов -> объекты contributor (формат OJS contributors API).
+    // Email теперь обязателен и заполняется вручную (не mock).
+    buildContributorsPayload: function (submissionId) {
+      var self = this
+      return (this.articleForm.authors || [])
+        .filter(function (a) {
+          var author = a || {}
+          return (author.givenName && author.givenName.trim()) ||
+                 (author.familyName && author.familyName.trim()) ||
+                 (author.email && author.email.trim())
+        })
+        .map(function (a) {
+          var givenName = (a.givenName || '').trim()
+          var familyName = (a.familyName || '').trim()
+          var email = (a.email || '').trim()
+          return {
+            givenName: { ru: givenName },
+            familyName: { ru: familyName },
+            email: email,
+            userGroupId: AUTHOR_USER_GROUP_ID
+          }
+        })
+    },
+    // Записать список авторов как contributors публикации.
+    // Сначала удаляем существующих, затем добавляем текущих (простейшая
+    // стратегия синхронизации, т.к. отдельного PATCH/PUT массива нет).
+    saveContributors: function (submissionId, publicationId, contributors) {
+      var self = this
+      return getContributors(submissionId, publicationId)
+        .then(function (existing) {
+          var deletions = (existing || []).map(function (c) {
+            return deleteContributor(submissionId, publicationId, c.id)
+              .catch(function () { /* игнорируем ошибку удаления */ })
+          })
+          return Promise.all(deletions)
+        })
+        .then(function () {
+          var creations = (contributors || []).map(function (c) {
+            return createContributor(submissionId, publicationId, c)
+              .catch(function (err) {
+                self.$message && self.$message.warning('Не удалось добавить автора: ' + (c.familyName.ru || '') + ' — ' + (err.message || ''))
+              })
+          })
+          return Promise.all(creations)
+        })
+    },
     loadIssue() {
       var id = this.$route.params.id
+      var self = this
       this.loading = true
       getIssueDetail(id)
         .then(function (data) {
-          console.log('[IssueDetailPage] Issue data:', JSON.stringify(data, null, 2))
-          this.issue = data
-        }.bind(this))
+          self.issue = data
+          return getSections()
+        })
+        .then(function (sections) {
+          self.sections = sections || []
+          var articleIds = (self.issue && self.issue.articles || []).map(function (a) { return a.id })
+          return self.enrichArticles(articleIds)
+        })
         .catch(function (error) {
-          console.error(error)
-          this.issue = null
-        }.bind(this))
+          self.issue = null
+        })
         .finally(function () {
-          this.loading = false
-        }.bind(this))
+          self.loading = false
+        })
+    },
+    enrichArticles: function (articleIds) {
+      var self = this
+      if (!articleIds || !articleIds.length) {
+        self.articlesData = []
+        return Promise.resolve()
+      }
+      return Promise.all(articleIds.map(function (articleId) {
+        return getSubmissionDetail(articleId)
+          .then(function (sub) {
+            var pub = sub.currentPublication ||
+              (sub.publications && sub.publications[0]) || {}
+            var galley = (pub.galleys && pub.galleys[0]) || null
+            var authorsStr = (pub.authors || []).map(function (a) {
+              return self.getAuthorFullName(a)
+            }).filter(Boolean).join(', ')
+            var keywordsArr = (pub.keywords && (pub.keywords.ru || pub.keywords.en)) || []
+            return {
+              id: articleId,
+              title: pub.title || sub.title,
+              authors: authorsStr,
+              abstract: pub.abstract,
+              keywords: keywordsArr,
+              sectionId: pub.sectionId,
+              sectionTitle: self.getSectionTitle(pub.sectionId),
+              pages: sub.pages || pub.pages || '',
+              status: sub.status,
+              galley: galley
+            }
+          })
+          .catch(function () {
+            return null
+          })
+      })).then(function (list) {
+        self.articlesData = list.filter(Boolean)
+      })
     },
     goBack() {
       this.$router.push('/')
@@ -378,14 +571,13 @@ export default {
           self.availableSubmissions = data.filter(function (s) {
             return currentArticleIds.indexOf(s.id) === -1
           })
-        }.bind(this))
+        })
         .catch(function (error) {
-          console.error('Ошибка загрузки submissions', error)
           self.$message && self.$message.error('Не удалось загрузить статьи')
-        }.bind(this))
+        })
         .finally(function () {
           self.loadingSubmissions = false
-        }.bind(this))
+        })
     },
     isArticleInIssue(submissionId) {
       if (!this.issue || !this.issue.articles) return false
@@ -401,7 +593,6 @@ export default {
           self.loadSubmissions()
         })
         .catch(function (error) {
-          console.error('Ошибка добавления статьи', error)
           self.$message && self.$message.error(error.message || 'Не удалось добавить статью')
         })
     },
@@ -411,44 +602,106 @@ export default {
     },
     openEditArticleDialog(article) {
       this.editingArticle = article
+      var self = this
+      this.editArticleDialogVisible = true
       this.articleForm = {
         titleRu: this.getLocalized(article.title),
         titleEn: article.title && article.title.en || '',
-        authors: article.authors || '',
+        authors: [{ givenName: '', familyName: '', email: '' }],
         pages: article.pages || '',
         status: article.status || 'submitted'
       }
-      this.editArticleDialogVisible = true
+      // Загружаем реальных контрибьютеров из БД, чтобы их можно было отредактировать
+      getSubmissionDetail(article.id)
+        .then(function (sub) {
+          var publicationId = sub.currentPublicationId ||
+            (sub.publications && sub.publications[0] && sub.publications[0].id)
+          self._editingSubmissionId = article.id
+          self._editingPublicationId = publicationId
+          if (!publicationId) return null
+          return getContributors(article.id, publicationId)
+        })
+        .then(function (contributors) {
+          if (!contributors || !contributors.length) return
+          var authorsArr = contributors.map(function (c) {
+            return {
+              givenName: (c.givenName && (c.givenName.ru || c.givenName.en)) || '',
+              familyName: (c.familyName && (c.familyName.ru || c.familyName.en)) || '',
+              email: c.email || ''
+            }
+          })
+          if (authorsArr.length === 0) authorsArr.push({ givenName: '', familyName: '', email: '' })
+          self.articleForm.authors = authorsArr
+        })
+        .catch(function () {
+          // fallback: парсим строку authors из отображаемых данных
+          var fallback = []
+          if (article.authors) {
+            fallback = String(article.authors)
+              .split(',')
+              .map(function (s) { return s.trim() })
+              .filter(Boolean)
+              .map(function (name) {
+                var parts = name.split(/\s+/)
+                var given = parts.shift() || name
+                var family = parts.join(' ') || name
+                return { givenName: given, familyName: family, email: '' }
+              })
+          }
+          if (fallback.length === 0) fallback.push({ givenName: '', familyName: '', email: '' })
+          self.articleForm.authors = fallback
+        })
     },
     saveArticleEdit() {
       if (!this.editingArticle) return
+      var vErr = this.validateAuthors()
+      if (vErr) {
+        this.$message && this.$message.warning(vErr)
+        return
+      }
       this.savingArticle = true
       var self = this
+      var submissionId = this._editingSubmissionId || this.editingArticle.id
 
-      // В реальном проекте здесь должен быть API вызов для обновления статьи
-      // Пока просто обновляем локально
-      var updatedArticle = {
-        id: this.editingArticle.id,
-        title: {
-          ru: this.articleForm.titleRu,
-          en: this.articleForm.titleEn
-        },
-        authors: this.articleForm.authors,
-        pages: this.articleForm.pages,
-        status: this.articleForm.status
+      var proceed = function (publicationId) {
+        self._editingPublicationId = publicationId
+        var contributors = self.buildContributorsPayload(submissionId)
+        return self.saveContributors(submissionId, publicationId, contributors)
+          .then(function () {
+            self.$message && self.$message.success('Авторы сохранены')
+            self.editArticleDialogVisible = false
+            self.editingArticle = null
+            self._editingSubmissionId = null
+            self._editingPublicationId = null
+            self.loadIssue()
+          })
       }
 
-      // Имитируем сохранение
-      setTimeout(function () {
-        var index = self.issue.articles.findIndex(function (a) { return a.id === self.editingArticle.id })
-        if (index !== -1) {
-          self.issue.articles.splice(index, 1, updatedArticle)
-        }
-        self.$message && self.$message.success('Статья обновлена')
-        self.editArticleDialogVisible = false
-        self.editingArticle = null
-        self.savingArticle = false
-      }, 500)
+      if (this._editingPublicationId) {
+        return proceed(this._editingPublicationId)
+          .catch(function (error) {
+            self.$message && self.$message.error(error.message || 'Не удалось сохранить авторов')
+          })
+          .finally(function () {
+            self.savingArticle = false
+          })
+      }
+
+      getSubmissionDetail(submissionId)
+        .then(function (sub) {
+          var publicationId = sub.currentPublicationId ||
+            (sub.publications && sub.publications[0] && sub.publications[0].id)
+          if (!publicationId) {
+            throw new Error('Не получен ID publication')
+          }
+          return proceed(publicationId)
+        })
+        .catch(function (error) {
+          self.$message && self.$message.error(error.message || 'Не удалось сохранить авторов')
+        })
+        .finally(function () {
+          self.savingArticle = false
+        })
     },
     removeArticle() {
       if (!this.removingArticle || !this.issue) return
@@ -464,7 +717,6 @@ export default {
           self.loadIssue()
         })
         .catch(function (error) {
-          console.error('Ошибка удаления статьи', error)
           self.$message && self.$message.error(error.message || 'Не удалось удалить статью')
         })
         .finally(function () {
@@ -478,7 +730,7 @@ export default {
         titleEn: '',
         abstractRu: '',
         abstractEn: '',
-        authors: '',
+        authors: [{ givenName: '', familyName: '', email: '' }],
         keywords: '',
         pdfFile: null,
         pages: '',
@@ -488,7 +740,6 @@ export default {
       this.pdfFileList = []
       this.createArticleDialogVisible = true
 
-      // Загружаем ID журнала и список секций
       getCurrentContextId()
         .then(function (contextId) {
           self.articleForm.contextId = contextId
@@ -498,17 +749,13 @@ export default {
           self.sections = sections
           if (sections.length > 0) {
             var section = sections[0]
-            console.log('Section object keys:', Object.keys(section))
-            console.log('Section object:', JSON.stringify(section, null, 2))
             var sectionId = section.id || section.sectionId || section.section_id || section.section
-            // Приводим к number сразу
             self.articleForm.sectionId = Number(sectionId)
           } else {
             self.articleForm.sectionId = 1
           }
         })
         .catch(function (error) {
-          console.error('Ошибка загрузки данных', error)
           self.articleForm.sectionId = 1
         })
     },
@@ -520,30 +767,18 @@ export default {
         this.$message && this.$message.warning('Введите название статьи')
         return
       }
+      var vErr = this.validateAuthors()
+      if (vErr) {
+        this.$message && this.$message.warning(vErr)
+        return
+      }
       this.creatingArticle = true
       var self = this
 
-      // sectionId — обязательно integer
       if (!this.articleForm.sectionId) this.articleForm.sectionId = 1
       var sectionId = parseInt(this.articleForm.sectionId, 10)
 
-      // authors: строка ФИО -> массив объектов авторов (формат OJS API)
-      var authors = []
-      var authorNames = (this.articleForm.authors || '')
-        .split(/[,\n;]/)
-        .map(function (s) { return s.trim() })
-        .filter(Boolean)
-      authorNames.forEach(function (name) {
-        var parts = name.split(/\s+/)
-        var givenName = parts.shift() || name
-        var familyName = parts.join(' ') || name
-        authors.push({
-          givenName: { ru: givenName },
-          familyName: { ru: familyName }
-        })
-      })
-
-      // keywords: строка через запятую -> { ru: [...] } (формат OJS API)
+      // keywords: строка через запятую -> { ru: [...] }
       var keywords = {}
       var kwList = (this.articleForm.keywords || '')
         .split(',')
@@ -553,9 +788,6 @@ export default {
         keywords = { ru: kwList }
       }
 
-      // 1. Создаём «каркас» submission.
-      // ВНИМАНИЕ: OJS сам определяет contextId по API-ключу — поле contextId
-      // передавать в теле нельзя, иначе 400 "Свойство contextId не может быть изменено".
       var submissionData = {
         sectionId: sectionId,
         locale: 'ru'
@@ -568,18 +800,14 @@ export default {
             throw new Error('Не получен ID submission')
           }
 
-          // OJS уже создал publication v1 при createSubmission.
-          // Берём её id (currentPublicationId / publications[0].id).
           var publicationId = submission.currentPublicationId ||
             (submission.publications && submission.publications[0] && submission.publications[0].id)
-
           if (!publicationId) {
             throw new Error('Не получен ID publication')
           }
+          self._publicationId = publicationId
+          self._submissionId = submissionId
 
-          // 2. Записываем метаданные в существующую publication (PUT).
-          // Журнал принимает только локаль ru, поэтому en-поля не отправляем
-          // (иначе 400 "Данный язык не принимается").
           var publicationData = {
             version: 1,
             title: { ru: self.articleForm.titleRu },
@@ -587,7 +815,6 @@ export default {
               ? { ru: self.articleForm.abstractRu }
               : undefined,
             sectionId: sectionId,
-            authors: authors,
             keywords: keywords
           }
           Object.keys(publicationData).forEach(function (key) {
@@ -595,36 +822,50 @@ export default {
               delete publicationData[key]
             }
           })
-
           return updatePublication(submissionId, publicationId, publicationData)
-            .then(function () {
-              // 3. Загружаем PDF-файл, если выбран
-              if (self.articleForm.pdfFile) {
-                return uploadSubmissionFile(submissionId, self.articleForm.pdfFile, 'ru')
-                  .catch(function (err) {
-                    console.error('Ошибка загрузки PDF (продолжаем без файла):', err)
-                  })
-              }
+        })
+        .then(function () {
+          // Шаг 3b. Авторы пишутся через отдельный эндпоинт contributors
+          // (PUT publication с полем authors OJS игнорирует).
+          var contributors = self.buildContributorsPayload(submissionId)
+          return self.saveContributors(submissionId, self._publicationId, contributors)
+        })
+        .then(function () {
+          if (!self.articleForm.pdfFile) return
+          return uploadSubmissionFile(self._submissionId, self.articleForm.pdfFile, 'ru')
+            .then(function (fileResp) {
+              var fileId = fileResp.id || (fileResp.file && fileResp.file.id)
+              if (!fileId) return
+              return createGalley(self._submissionId, self._publicationId, fileId, 'ru')
+                .catch(function (err) {
+                  // Galley — необязательный шаг
+                })
             })
-            .then(function () {
-              // 4. Назначаем статью в текущий выпуск.
-              // В этой версии OJS назначение выпуска делается через publication.issueId
-              // (маршрута /issues/{id}/catalog не существует).
-              return catalogSubmission(self.issue.id, submissionId)
+            .catch(function (err) {
+              // Ошибка загрузки файла не прерывает создание статьи
             })
         })
         .then(function () {
-          console.log('✓ Статья создана и добавлена в выпуск')
+          return submitToProduction(self._submissionId)
+            .catch(function (err) {
+              // продолжаем без перевода в production
+            })
+        })
+        .then(function () {
+          return catalogSubmission(self.issue.id, self._submissionId)
+        })
+        .then(function () {
           self.$message && self.$message.success('Статья создана и добавлена в выпуск')
           self.createArticleDialogVisible = false
           self.loadIssue()
         })
         .catch(function (error) {
-          console.error('✗ Ошибка создания статьи:', error)
           self.$message && self.$message.error(error.message || 'Не удалось создать статью')
         })
         .finally(function () {
           self.creatingArticle = false
+          self._publicationId = null
+          self._submissionId = null
         })
     }
   }
@@ -765,10 +1006,52 @@ export default {
   color: var(--el-text-color-secondary);
 }
 
-.article-pages {
+.article-section {
   margin: 2px 0 0;
+}
+
+.article-abstract {
+  margin: 6px 0 0;
+  font-size: 0.85rem;
+  color: var(--el-text-color-regular);
+  line-height: 1.4;
+}
+
+.article-keywords {
+  margin: 4px 0 0;
+  font-size: 0.8rem;
+  color: var(--el-text-color-secondary);
+}
+
+.keyword-label {
+  font-weight: 500;
+}
+
+.keyword-chip {
+  display: inline-block;
+  margin: 0 4px 2px 0;
+  padding: 0 6px;
+  border-radius: 4px;
+  background: var(--el-fill-color-light);
+}
+
+.article-meta-row {
+  margin: 6px 0 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.article-pages {
   font-size: 0.8rem;
   color: var(--el-text-color-placeholder);
+}
+
+.article-galley-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .section-header {
@@ -790,6 +1073,18 @@ export default {
 
 .section-actions {
   display: flex;
+  gap: 8px;
+}
+
+.authors-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.author-row {
+  display: flex;
+  align-items: center;
   gap: 8px;
 }
 
