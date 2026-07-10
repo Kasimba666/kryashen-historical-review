@@ -29,5 +29,10 @@ export function authMiddleware(to) {
     }
   }
 
+  // Страница только для администратора сайта (аккаунт «ojs»)
+  if (to.meta && to.meta.siteAdminOnly && !auth.isSiteAdmin()) {
+    return '/'
+  }
+
   return true
 }

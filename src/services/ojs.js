@@ -260,6 +260,198 @@ export function getSubmissionDetail(id) {
     })
 }
 
+function localizeValue(obj) {
+  if (!obj) return ''
+  if (typeof obj === 'string') return obj
+  return obj.ru || obj.en || ''
+}
+
+// Комплексная проверка таблиц на «осиротевшие» записи.
+// Валидная статья = материал (submission) + публикация (publication),
+// связанные между собой, плюс (опционально) авторы (contributors).
+// Возвращает три группы невалидных записей:
+//   1) submissionsWithoutPublication — материалы без публикации;
+//   2) publicationsWithoutSubmission — публикации без (валидного) материала;
+//   3) authorsWithoutPublication — авторы без (валидной) публикации.
+export function getTableCheckData() {
+  return Promise.all([getSubmissions(), getJournalInfo(), getIssues()])
+    .then(function (init) {
+      var subs = init[0] || []
+      var journal = init[1]
+      var issues = init[2] || []
+      var journalId = journal ? journal.id : null
+
+      // Убедимся, что у каждого материала загружен массив publications
+      return Promise.all(subs.map(function (s) {
+        if (s.publications && s.publications.length) return Promise.resolve(s)
+        return getSubmissionDetail(s.id).catch(function () { return s })
+      })).then(function (loaded) {
+        return { subs: loaded, journalId: journalId, issues: issues }
+      })
+    })
+    .then(function (ctx) {
+      var subs = ctx.subs
+      var journalId = ctx.journalId
+      var submissionIds = {}
+      subs.forEach(function (s) { submissionIds[s.id] = s })
+
+      // Собираем все публикации со ссылкой на родительский материал
+      var allPublications = []
+      subs.forEach(function (s) {
+        (s.publications || []).forEach(function (pub) {
+          allPublications.push({ pub: pub, submissionId: s.id })
+        })
+      })
+
+      var publicationIds = {}
+      allPublications.forEach(function (p) { publicationIds[p.pub.id] = p })
+
+      // Материалы без публикаций
+      var submissionsWithoutPublication = subs
+        .filter(function (s) { return !s.publications || s.publications.length === 0 })
+        .map(function (s) {
+          var titleObj = (s.currentPublication && s.currentPublication.title) || s.title || {}
+          return {
+            id: s.id,
+            title: localizeValue(titleObj) || '(без названия)',
+            status: s.status,
+            stageId: s.stageId,
+            dateSubmitted: s.dateSubmitted || s.dateLastActivity || null,
+            publicationsCount: 0
+          }
+        })
+
+      // Материалы с публикацией, но без привязки к выпуску (issue)
+      var articlesWithoutIssue = []
+      subs.forEach(function (s) {
+        var pubs = s.publications || []
+        if (pubs.length === 0) return
+        var hasIssue = pubs.some(function (pub) { return pub.issueId })
+        if (!hasIssue) {
+          var titleObj = (s.currentPublication && s.currentPublication.title) || pubs[0].title || s.title || {}
+          articlesWithoutIssue.push({
+            id: s.id,
+            title: localizeValue(titleObj) || '(без названия)',
+            status: s.status,
+            publicationsCount: pubs.length
+          })
+        }
+      })
+
+      // Выпуски без привязки к журналу
+      var issuesWithoutJournal = ctx.issues
+        .filter(function (issue) {
+          return !issue.journalId || (journalId !== null && issue.journalId !== journalId)
+        })
+        .map(function (issue) {
+          return {
+            id: issue.id,
+            title: localizeValue(issue.title) || issue.identification || '(без названия)',
+            journalId: issue.journalId || null,
+            identification: issue.identification || ''
+          }
+        })
+
+      // Загружаем контрибьютеров для каждой публикации
+      return Promise.all(allPublications.map(function (p) {
+        return getContributors(p.submissionId, p.pub.id)
+          .then(function (list) { return { p: p, contributors: list || [] } })
+          .catch(function () { return { p: p, contributors: [] } })
+      })).then(function (entries) {
+        var pubContributors = {}
+        entries.forEach(function (e) { pubContributors[e.p.pub.id] = e.contributors })
+
+        // Публикации без валидного материала
+        var publicationsWithoutSubmission = allPublications
+          .filter(function (p) {
+            var sid = p.pub.submissionId
+            return !sid || !submissionIds[sid] || sid !== p.submissionId
+          })
+          .map(function (p) {
+            return {
+              id: p.pub.id,
+              submissionId: p.pub.submissionId || null,
+              title: localizeValue(p.pub.title) || '(без названия)',
+              status: p.pub.status,
+              datePublished: p.pub.datePublished || null,
+              authors: (pubContributors[p.pub.id] || []).map(function (c) {
+                return {
+                  id: c.id,
+                  name: (localizeValue(c.givenName) + ' ' + localizeValue(c.familyName)).trim(),
+                  email: c.email || ''
+                }
+              }),
+              _contributors: pubContributors[p.pub.id] || []
+            }
+          })
+
+        // Авторы без валидной публикации
+        var authorsWithoutPublication = []
+        entries.forEach(function (e) {
+          var pub = e.p.pub
+          var pubValid = submissionIds[pub.submissionId] && pub.submissionId === e.p.submissionId
+          e.contributors.forEach(function (c) {
+            if (!pubValid || !c.publicationId || !publicationIds[c.publicationId]) {
+              authorsWithoutPublication.push({
+                id: c.id,
+                givenName: localizeValue(c.givenName),
+                familyName: localizeValue(c.familyName),
+                email: c.email || '',
+                publicationId: c.publicationId || null,
+                submissionId: e.p.submissionId
+              })
+            }
+          })
+        })
+
+        return {
+          submissionsWithoutPublication: submissionsWithoutPublication,
+          publicationsWithoutSubmission: publicationsWithoutSubmission,
+          authorsWithoutPublication: authorsWithoutPublication,
+          articlesWithoutIssue: articlesWithoutIssue,
+          issuesWithoutJournal: issuesWithoutJournal
+        }
+      })
+    })
+}
+
+// Каскадное удаление материала: OJS при DELETE /submissions/{id}
+// сам удаляет связанные публикации и контрибьютеров.
+export function deleteSubmissionCascade(submissionId) {
+  return fetchThroughProxy(API_BASE + '/api/v1/submissions/' + submissionId, {
+    method: 'DELETE',
+    headers: authHeaders
+  }).then(function (r) {
+    if (!r.ok) {
+      return r.json().then(function (e) {
+        throw new Error(e.errorMessage || 'Ошибка удаления материала')
+      })
+    }
+    return true
+  })
+}
+
+// Каскадное удаление публикации: сначала удаляем всех контрибьютеров,
+// затем саму публикацию, чтобы не осталось зависших авторов.
+export function deletePublicationCascade(submissionId, publicationId, contributors) {
+  var deletions = (contributors || []).map(function (c) {
+    return deleteContributor(submissionId, publicationId, c.id).catch(function () {})
+  })
+  return Promise.all(deletions).then(function () {
+    return fetchThroughProxy(
+      API_BASE + '/api/v1/submissions/' + submissionId + '/publications/' + publicationId,
+      { method: 'DELETE', headers: authHeaders }
+    ).then(function (r) {
+      if (!r.ok) {
+        return r.json().then(function (e) {
+          throw new Error(e.errorMessage || 'Ошибка удаления публикации')
+        })
+      }
+      return true
+    })
+  })
+}
+
 // Получить список секций (разделов) журнала
 export function getSections() {
   return fetchThroughProxy(API_BASE + '/api/v1/sections', { headers: authHeaders })

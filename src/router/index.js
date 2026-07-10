@@ -4,6 +4,7 @@ import IssueDetailPage from '@/pages/IssueDetailPage.vue'
 import LoginPage from '@/pages/LoginPage.vue'
 import UsersPage from '@/pages/UsersPage.vue'
 import AboutPage from '@/pages/AboutPage.vue'
+import TablesCheckPage from '@/pages/TablesCheckPage.vue'
 import { authMiddleware } from '@/composables/useAuthorization'
 
 const router = createRouter({
@@ -37,6 +38,15 @@ const router = createRouter({
       meta: { 
         requiresAuth: true,
         roles: [16, 17] // Journal Manager (16) или Editor (17)
+      }
+    },
+    {
+      path: '/tables-check',
+      name: 'tables-check',
+      component: TablesCheckPage,
+      meta: { 
+        requiresAuth: true,
+        siteAdminOnly: true // только администратор сайта (ojs)
       }
     }
   ],

@@ -8,22 +8,32 @@
               <el-icon :size="20"><Reading /></el-icon>
               <span>Кряшенское историческое обозрение</span>
             </router-link>
-            <el-menu
-              :default-active="currentRoute"
-              mode="horizontal"
-              :ellipsis="false"
-              class="nav-menu"
-              @select="handleNavSelect"
-            >
-              <el-menu-item index="/about">
-                <el-icon :size="14"><InfoFilled /></el-icon>
-                <span>О журнале</span>
-              </el-menu-item>
-              <el-menu-item index="/">
-                <el-icon :size="14"><Collection /></el-icon>
-                <span>Выпуски</span>
-              </el-menu-item>
-            </el-menu>
+              <el-menu
+                :default-active="currentRoute"
+                mode="horizontal"
+                :ellipsis="false"
+                class="nav-menu"
+                @select="handleNavSelect"
+              >
+                <el-menu-item index="/about">
+                  <el-icon :size="14"><InfoFilled /></el-icon>
+                  <span>О журнале</span>
+                </el-menu-item>
+                <el-menu-item index="/">
+                  <el-icon :size="14"><Collection /></el-icon>
+                  <span>Выпуски</span>
+                </el-menu-item>
+                <el-sub-menu v-if="isSiteAdmin" index="management">
+                  <template #title>
+                    <el-icon :size="14"><Setting /></el-icon>
+                    <span>Управление</span>
+                  </template>
+                  <el-menu-item index="/tables-check">
+                    <el-icon :size="14"><Document /></el-icon>
+                    <span>Проверка таблиц</span>
+                  </el-menu-item>
+                </el-sub-menu>
+              </el-menu>
           </div>
           <div class="header-actions">
             <template v-if="isAuthenticated">
@@ -105,6 +115,7 @@ export default {
     return {
       isDark: false,
       isAuthenticated: false,
+      isSiteAdmin: false,
       displayName: '',
       username: '',
       roleNames: '',
@@ -136,11 +147,13 @@ export default {
         var roles = auth.getRoleNames()
         this.roleNames = roles.map(function (r) { return r.name }).join(', ')
         this.canManageUsers = auth.hasRole(16) || auth.hasRole(17)
+        this.isSiteAdmin = auth.isSiteAdmin()
       } else {
         this.displayName = ''
         this.username = ''
         this.roleNames = ''
         this.canManageUsers = false
+        this.isSiteAdmin = false
       }
     },
     toggleTheme: function () {

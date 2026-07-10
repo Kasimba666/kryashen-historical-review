@@ -21,6 +21,9 @@ import { SESSION_KEY, SESSION_EXPIRY_MS } from '@/config/constants'
  *   65536 — Author (автор)
  *   1048576 — Reader (читатель)
  *   2097152 — Subscription Manager
+ *
+ * Администратор сайта (site admin) — это служебный аккаунт OJS
+ * с логином «ojs», которому нельзя назначать роли через интерфейс.
  */
 
 
@@ -97,6 +100,15 @@ export function useAuth() {
   }
 
   /**
+   * Проверить, является ли пользователь администратором сайта
+   * (служебный аккаунт OJS с логином «ojs»)
+   */
+  function isSiteAdmin() {
+    var session = getSession()
+    return !!session && session.username === 'ojs'
+  }
+
+  /**
    * Получить отображаемое имя пользователя
    */
   function getDisplayName() {
@@ -143,6 +155,7 @@ export function useAuth() {
     logout: logout,
     hasRole: hasRole,
     isAdmin: isAdmin,
+    isSiteAdmin: isSiteAdmin,
     getDisplayName: getDisplayName,
     getRoleNames: getRoleNames,
     getUsername: getUsername
