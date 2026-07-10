@@ -33,7 +33,7 @@
               <el-tag size="small" type="danger">{{ submissions.length }}</el-tag>
             </h2>
             <el-empty v-if="submissions.length === 0" description="Нет" />
-            <el-table v-else :data="submissions" stripe class="result-table">
+            <el-table v-else :data="submissions" stripe class="result-table" @row-click="onRowClick('submission', $event)">
               <el-table-column prop="id" label="ID" width="90" />
               <el-table-column prop="title" label="Название" min-width="260" />
               <el-table-column label="Статус" width="160">
@@ -43,8 +43,8 @@
               </el-table-column>
               <el-table-column label="Действия" width="200" fixed="right">
                 <template #default="scope">
-                  <el-button size="small" @click="openSubmissionDetail(scope.row)">Детали</el-button>
-                  <el-button size="small" type="danger" :loading="scope.row._deleting" @click="deleteSubmission(scope.row)">Удалить</el-button>
+                  <el-button size="small" @click.stop="openSubmissionDetail(scope.row)">Детали</el-button>
+                  <el-button size="small" type="danger" :loading="scope.row._deleting" @click.stop="deleteSubmission(scope.row)">Удалить</el-button>
                 </template>
               </el-table-column>
             </el-table>
@@ -57,7 +57,7 @@
               <el-tag size="small" type="danger">{{ publications.length }}</el-tag>
             </h2>
             <el-empty v-if="publications.length === 0" description="Нет" />
-            <el-table v-else :data="publications" stripe class="result-table">
+            <el-table v-else :data="publications" stripe class="result-table" @row-click="onRowClick('publication', $event)">
               <el-table-column prop="id" label="ID публикации" width="120" />
               <el-table-column prop="submissionId" label="ID материала" width="130" />
               <el-table-column prop="title" label="Название" min-width="220" />
@@ -66,8 +66,8 @@
               </el-table-column>
               <el-table-column label="Действия" width="200" fixed="right">
                 <template #default="scope">
-                  <el-button size="small" @click="openPublicationDetail(scope.row)">Детали</el-button>
-                  <el-button size="small" type="danger" :loading="scope.row._deleting" @click="deletePublication(scope.row)">Удалить</el-button>
+                  <el-button size="small" @click.stop="openPublicationDetail(scope.row)">Детали</el-button>
+                  <el-button size="small" type="danger" :loading="scope.row._deleting" @click.stop="deletePublication(scope.row)">Удалить</el-button>
                 </template>
               </el-table-column>
             </el-table>
@@ -80,16 +80,17 @@
               <el-tag size="small" type="danger">{{ authors.length }}</el-tag>
             </h2>
             <el-empty v-if="authors.length === 0" description="Нет" />
-            <el-table v-else :data="authors" stripe class="result-table">
+            <el-table v-else :data="authors" stripe class="result-table" @row-click="onRowClick('author', $event)">
               <el-table-column prop="id" label="ID" width="100" />
               <el-table-column label="Имя" min-width="200">
                 <template #default="scope">{{ fullName(scope.row) }}</template>
               </el-table-column>
               <el-table-column prop="email" label="Email" min-width="200" />
               <el-table-column prop="publicationId" label="ID публикации" width="140" />
-              <el-table-column label="Действия" width="120" fixed="right">
+              <el-table-column label="Действия" width="200" fixed="right">
                 <template #default="scope">
-                  <el-button size="small" type="danger" :loading="scope.row._deleting" @click="deleteAuthor(scope.row)">Удалить</el-button>
+                  <el-button size="small" @click.stop="openAuthorDetail(scope.row)">Детали</el-button>
+                  <el-button size="small" type="danger" :loading="scope.row._deleting" @click.stop="deleteAuthor(scope.row)">Удалить</el-button>
                 </template>
               </el-table-column>
             </el-table>
@@ -102,7 +103,7 @@
               <el-tag size="small" type="danger">{{ articlesWithoutIssue.length }}</el-tag>
             </h2>
             <el-empty v-if="articlesWithoutIssue.length === 0" description="Нет" />
-            <el-table v-else :data="articlesWithoutIssue" stripe class="result-table">
+            <el-table v-else :data="articlesWithoutIssue" stripe class="result-table" @row-click="onRowClick('article', $event)">
               <el-table-column prop="id" label="ID" width="90" />
               <el-table-column prop="title" label="Название" min-width="260" />
               <el-table-column label="Статус" width="160">
@@ -111,9 +112,10 @@
                 </template>
               </el-table-column>
               <el-table-column prop="publicationsCount" label="Публикаций" width="120" />
-              <el-table-column label="Действия" width="120" fixed="right">
+              <el-table-column label="Действия" width="200" fixed="right">
                 <template #default="scope">
-                  <el-button size="small" type="danger" :loading="scope.row._deleting" @click="deleteArticleWithoutIssue(scope.row)">Удалить</el-button>
+                  <el-button size="small" @click.stop="openArticleDetail(scope.row)">Детали</el-button>
+                  <el-button size="small" type="danger" :loading="scope.row._deleting" @click.stop="deleteArticleWithoutIssue(scope.row)">Удалить</el-button>
                 </template>
               </el-table-column>
             </el-table>
@@ -126,16 +128,17 @@
               <el-tag size="small" type="danger">{{ issuesWithoutJournal.length }}</el-tag>
             </h2>
             <el-empty v-if="issuesWithoutJournal.length === 0" description="Нет" />
-            <el-table v-else :data="issuesWithoutJournal" stripe class="result-table">
+            <el-table v-else :data="issuesWithoutJournal" stripe class="result-table" @row-click="onRowClick('issue', $event)">
               <el-table-column prop="id" label="ID" width="90" />
               <el-table-column prop="title" label="Название" min-width="220" />
               <el-table-column prop="identification" label="Идентификация" min-width="160" />
               <el-table-column prop="journalId" label="ID журнала" width="140">
                 <template #default="scope">{{ scope.row.journalId || '— (нет)' }}</template>
               </el-table-column>
-              <el-table-column label="Действия" width="120" fixed="right">
+              <el-table-column label="Действия" width="200" fixed="right">
                 <template #default="scope">
-                  <el-button size="small" type="danger" :loading="scope.row._deleting" @click="deleteIssueWithoutJournal(scope.row)">Удалить</el-button>
+                  <el-button size="small" @click.stop="openIssueDetail(scope.row)">Детали</el-button>
+                  <el-button size="small" type="danger" :loading="scope.row._deleting" @click.stop="deleteIssueWithoutJournal(scope.row)">Удалить</el-button>
                 </template>
               </el-table-column>
             </el-table>
@@ -206,6 +209,86 @@
         <el-button type="danger" :loading="activePublication && activePublication._deleting" @click="deletePublication(activePublication)">Удалить публикацию</el-button>
       </template>
     </el-dialog>
+
+    <!-- Детали автора -->
+    <el-dialog v-model="authorDialogVisible" title="Детали автора" width="600px">
+      <template v-if="activeAuthor">
+        <el-descriptions :column="1" border>
+          <el-descriptions-item label="ID">{{ activeAuthor.id }}</el-descriptions-item>
+          <el-descriptions-item label="Имя">{{ fullName(activeAuthor) }}</el-descriptions-item>
+          <el-descriptions-item label="Email">{{ activeAuthor.email || '—' }}</el-descriptions-item>
+          <el-descriptions-item label="ID публикации">{{ activeAuthor.publicationId || '— (нет)' }}</el-descriptions-item>
+          <el-descriptions-item label="ID материала">{{ activeAuthor.submissionId || '— (нет)' }}</el-descriptions-item>
+        </el-descriptions>
+        <p class="detail-note">
+          <template v-if="!activeAuthor.publicationId">
+            У автора не указана публикация — связь критично нарушена, автор не привязан ни к одной публикации.
+          </template>
+          <template v-else-if="!activeAuthor.publicationValid">
+            Указана публикация (ID {{ activeAuthor.publicationId }}), но она невалидна (отсутствует или не связана с материалом) — автор не виден на сайте.
+          </template>
+          <template v-else>
+            Автор связан с валидной публикацией, но попал в список по другим причинам.
+          </template>
+        </p>
+      </template>
+      <template #footer>
+        <el-button @click="authorDialogVisible = false">Закрыть</el-button>
+        <el-button type="danger" :loading="activeAuthor && activeAuthor._deleting" @click="deleteAuthor(activeAuthor)">Удалить автора</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- Детали материала без выпуска -->
+    <el-dialog v-model="articleDialogVisible" title="Детали материала без выпуска" width="600px">
+      <template v-if="activeArticle">
+        <el-descriptions :column="1" border>
+          <el-descriptions-item label="ID материала">{{ activeArticle.id }}</el-descriptions-item>
+          <el-descriptions-item label="Название">{{ activeArticle.title }}</el-descriptions-item>
+          <el-descriptions-item label="Статус">{{ getStatusLabel(activeArticle.status) }}</el-descriptions-item>
+          <el-descriptions-item label="Всего публикаций">{{ activeArticle.publicationsCount }}</el-descriptions-item>
+        </el-descriptions>
+        <h4 class="detail-subtitle">Публикации ({{ activeArticle.publications.length }})</h4>
+        <el-table :data="activeArticle.publications" size="small" class="detail-table">
+          <el-table-column prop="id" label="ID публикации" width="140" />
+          <el-table-column label="Статус" width="160">
+            <template #default="scope">
+              <el-tag size="small" :type="getStatusType(scope.row.status)">{{ getStatusLabel(scope.row.status) }}</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="ID выпуска" min-width="160">
+            <template #default="scope">{{ scope.row.issueId || '— (нет, критично)' }}</template>
+          </el-table-column>
+        </el-table>
+        <p class="detail-note">
+          У материала есть публикация(и), но ни одна из них не привязана к выпуску — материал
+          не виден в журнале. Это критично: статья готова, но «потеряна» без выпуска.
+        </p>
+      </template>
+      <template #footer>
+        <el-button @click="articleDialogVisible = false">Закрыть</el-button>
+        <el-button type="danger" :loading="activeArticle && activeArticle._deleting" @click="deleteArticleWithoutIssue(activeArticle)">Удалить материал</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- Детали выпуска без журнала -->
+    <el-dialog v-model="issueDialogVisible" title="Детали выпуска без журнала" width="600px">
+      <template v-if="activeIssue">
+        <el-descriptions :column="1" border>
+          <el-descriptions-item label="ID выпуска">{{ activeIssue.id }}</el-descriptions-item>
+          <el-descriptions-item label="Название">{{ activeIssue.title }}</el-descriptions-item>
+          <el-descriptions-item label="Идентификация">{{ activeIssue.identification || '—' }}</el-descriptions-item>
+          <el-descriptions-item label="ID журнала">{{ activeIssue.journalId || '— (нет, критично)' }}</el-descriptions-item>
+        </el-descriptions>
+        <p class="detail-note">
+          Выпуск не привязан ни к одному журналу (или к чужому) — он не отображается
+          на сайте и недоступен для назначения статей.
+        </p>
+      </template>
+      <template #footer>
+        <el-button @click="issueDialogVisible = false">Закрыть</el-button>
+        <el-button type="danger" :loading="activeIssue && activeIssue._deleting" @click="deleteIssueWithoutJournal(activeIssue)">Удалить выпуск</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -234,8 +317,14 @@ export default {
       issuesWithoutJournal: [],
       submissionDialogVisible: false,
       publicationDialogVisible: false,
+      authorDialogVisible: false,
+      articleDialogVisible: false,
+      issueDialogVisible: false,
       activeSubmission: null,
-      activePublication: null
+      activePublication: null,
+      activeAuthor: null,
+      activeArticle: null,
+      activeIssue: null
     }
   },
   methods: {
@@ -321,6 +410,26 @@ export default {
     openPublicationDetail(row) {
       this.activePublication = row
       this.publicationDialogVisible = true
+    },
+    openAuthorDetail(row) {
+      this.activeAuthor = row
+      this.authorDialogVisible = true
+    },
+    openArticleDetail(row) {
+      this.activeArticle = row
+      this.articleDialogVisible = true
+    },
+    openIssueDetail(row) {
+      this.activeIssue = row
+      this.issueDialogVisible = true
+    },
+    onRowClick(type, row) {
+      if (!row) return
+      if (type === 'submission') this.openSubmissionDetail(row)
+      else if (type === 'publication') this.openPublicationDetail(row)
+      else if (type === 'author') this.openAuthorDetail(row)
+      else if (type === 'article') this.openArticleDetail(row)
+      else if (type === 'issue') this.openIssueDetail(row)
     },
     deleteSubmission(row) {
       if (!row) return

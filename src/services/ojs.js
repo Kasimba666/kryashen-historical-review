@@ -333,7 +333,14 @@ export function getTableCheckData() {
             id: s.id,
             title: localizeValue(titleObj) || '(без названия)',
             status: s.status,
-            publicationsCount: pubs.length
+            publicationsCount: pubs.length,
+            publications: pubs.map(function (pub) {
+              return {
+                id: pub.id,
+                status: pub.status,
+                issueId: pub.issueId || null
+              }
+            })
           })
         }
       })
@@ -390,18 +397,19 @@ export function getTableCheckData() {
         entries.forEach(function (e) {
           var pub = e.p.pub
           var pubValid = submissionIds[pub.submissionId] && pub.submissionId === e.p.submissionId
-          e.contributors.forEach(function (c) {
-            if (!pubValid || !c.publicationId || !publicationIds[c.publicationId]) {
-              authorsWithoutPublication.push({
-                id: c.id,
-                givenName: localizeValue(c.givenName),
-                familyName: localizeValue(c.familyName),
-                email: c.email || '',
-                publicationId: c.publicationId || null,
-                submissionId: e.p.submissionId
-              })
-            }
-          })
+            e.contributors.forEach(function (c) {
+              if (!pubValid || !c.publicationId || !publicationIds[c.publicationId]) {
+                authorsWithoutPublication.push({
+                  id: c.id,
+                  givenName: localizeValue(c.givenName),
+                  familyName: localizeValue(c.familyName),
+                  email: c.email || '',
+                  publicationId: c.publicationId || null,
+                  submissionId: e.p.submissionId,
+                  publicationValid: !!pubValid && !!publicationIds[c.publicationId]
+                })
+              }
+            })
         })
 
         return {
