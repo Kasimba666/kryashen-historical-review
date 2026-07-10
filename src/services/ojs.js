@@ -144,18 +144,6 @@ export function getUsers() {
     })
 }
 
-export function getUserById(id) {
-  return fetchThroughProxy(API_BASE + '/api/v1/users/' + id, {
-    headers: authHeaders
-  })
-    .then(function (response) {
-      if (!response.ok) {
-        throw new Error('Ошибка получения пользователя (статус: ' + response.status + ')')
-      }
-      return response.json()
-    })
-}
-
 export function findUserByLogin(login) {
   return getUsers()
     .then(function (users) {
@@ -166,59 +154,6 @@ export function findUserByLogin(login) {
         if (u.email && u.email.toLowerCase() === login) return u
       }
       throw new Error('Пользователь не найден')
-    })
-}
-
-// Создание пользователя с группой (ролью)
-export function createUser(data) {
-  return fetchThroughProxy(API_BASE + '/api/v1/users', {
-    method: 'POST',
-    headers: jsonAuthHeaders,
-    body: JSON.stringify(data)
-  })
-    .then(function (response) {
-      return response.text().then(function (text) {
-        if (!response.ok) {
-          var errMsg = 'Ошибка создания пользователя (статус: ' + response.status + ')'
-          try {
-            var err = JSON.parse(text)
-            if (err.errorMessage) errMsg = err.errorMessage
-          } catch (e) {}
-          throw new Error(errMsg)
-        }
-        try { return JSON.parse(text) } catch (e) { return {} }
-      })
-    })
-    .then(function (data) {
-      usersCache = null
-      return data
-    })
-}
-
-// Обновление пользователя (только роли — данные пользователя через API не поддерживаются)
-export function updateUser(id, data) {
-  // OJS API не поддерживает PUT/PATCH для /api/v1/users/{id}
-  // Возвращаем успех, чтобы цепочка промисов продолжилась
-  return Promise.resolve({ id: id })
-}
-
-// Удаление пользователя
-export function deleteUser(id) {
-  return fetchThroughProxy(API_BASE + '/api/v1/users/' + id, {
-    method: 'DELETE',
-    headers: authHeaders
-  })
-    .then(function (response) {
-      if (!response.ok) {
-        return response.json().then(function (err) {
-          throw new Error(err.errorMessage || 'Ошибка удаления пользователя (статус: ' + response.status + ')')
-        })
-      }
-      return response.json()
-    })
-    .then(function (data) {
-      usersCache = null
-      return data
     })
 }
 
@@ -257,32 +192,6 @@ export function addUserToGroup(userId, contextId, roleId) {
       }
       usersCache = null
       return response.json()
-    })
-}
-
-// Удалить пользователя из группы
-export function removeUserFromGroup(userId, contextId, roleId) {
-  return fetchThroughProxy(API_BASE + '/api/v1/users/' + userId + '/groups', {
-    method: 'DELETE',
-    headers: jsonAuthHeaders,
-    body: JSON.stringify({
-      contextId: contextId,
-      roleId: roleId
-    })
-  })
-    .then(function (response) {
-      return response.text().then(function (text) {
-        if (!response.ok) {
-          // OJS API может не поддерживать удаление из групп через REST
-          // Не прерываем цепочку, просто логируем
-          return {}
-        }
-        try { return JSON.parse(text) } catch (e) { return {} }
-      })
-    })
-    .then(function (data) {
-      usersCache = null
-      return data
     })
 }
 
@@ -376,28 +285,6 @@ export function createSubmission(data) {
       return response.text().then(function (text) {
         if (!response.ok) {
           var errMsg = 'Ошибка создания submission (статус: ' + response.status + ')'
-          try {
-            var err = JSON.parse(text)
-            if (err.errorMessage) errMsg = err.errorMessage
-          } catch (e) {}
-          throw new Error(errMsg)
-        }
-        try { return JSON.parse(text) } catch (e) { return {} }
-      })
-    })
-}
-
-// Создание publication для submission
-export function createPublication(submissionId, data) {
-  return fetchThroughProxy(API_BASE + '/api/v1/submissions/' + submissionId + '/publications', {
-    method: 'POST',
-    headers: jsonAuthHeaders,
-    body: JSON.stringify(data)
-  })
-    .then(function (response) {
-      return response.text().then(function (text) {
-        if (!response.ok) {
-          var errMsg = 'Ошибка создания publication (статус: ' + response.status + ')'
           try {
             var err = JSON.parse(text)
             if (err.errorMessage) errMsg = err.errorMessage
@@ -708,28 +595,5 @@ export function deleteIssue(id) {
         })
       }
       return response.json()
-    })
-}
-
-export function unpublishIssue(id) {
-  // OJS не поддерживает стандартный REST метод для снятия с публикации
-  // Используем пустой PATCH или особый endpoint
-  return fetchThroughProxy(API_BASE + '/api/v1/issues/' + id + '/unpublish', {
-    method: 'POST',
-    headers: jsonAuthHeaders,
-    body: JSON.stringify({})
-  })
-    .then(function (response) {
-      return response.text().then(function (text) {
-        if (!response.ok) {
-          var errMsg = 'Ошибка снятия с публикации (статус: ' + response.status + ')'
-          try {
-            var err = JSON.parse(text)
-            if (err.errorMessage) errMsg = err.errorMessage
-          } catch (e) {}
-          throw new Error(errMsg)
-        }
-        try { return JSON.parse(text) } catch (e) { return { success: true } }
-      })
     })
 }

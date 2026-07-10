@@ -97,14 +97,6 @@ export function useAuth() {
   }
 
   /**
-   * Проверить, является ли пользователь редактором
-   * (Editor = roleId 17)
-   */
-  function isEditor() {
-    return hasRole(17)
-  }
-
-  /**
    * Получить отображаемое имя пользователя
    */
   function getDisplayName() {
@@ -144,17 +136,6 @@ export function useAuth() {
     return session ? session.username : ''
   }
 
-  /**
-   * Продлить сессию
-   */
-  function refreshSession() {
-    var session = getSession()
-    if (session) {
-      session.expiresAt = Date.now() + SESSION_EXPIRY_MS
-      localStorage.setItem(SESSION_KEY, JSON.stringify(session))
-    }
-  }
-
   return {
     getSession: getSession,
     isAuthenticated: isAuthenticated,
@@ -162,10 +143,8 @@ export function useAuth() {
     logout: logout,
     hasRole: hasRole,
     isAdmin: isAdmin,
-    isEditor: isEditor,
     getDisplayName: getDisplayName,
     getRoleNames: getRoleNames,
-    getUsername: getUsername,
-    refreshSession: refreshSession
+    getUsername: getUsername
   }
 }

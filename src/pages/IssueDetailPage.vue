@@ -332,7 +332,7 @@
 
 <script>
 import { ArrowLeft, Document, Download, Plus, Edit, Delete, Upload } from '@element-plus/icons-vue'
-import { getIssueDetail, getSubmissions, addArticleToIssue, removeArticleFromIssue, createSubmission, createPublication, updatePublication, uploadSubmissionFile, createGalley, submitToProduction, catalogSubmission, getSections, getCurrentContextId, getSubmissionDetail, getPublication, getContributors, createContributor, deleteContributor, AUTHOR_USER_GROUP_ID } from '@/services/ojs'
+import { getIssueDetail, getSubmissions, addArticleToIssue, removeArticleFromIssue, createSubmission, updatePublication, uploadSubmissionFile, createGalley, submitToProduction, catalogSubmission, getSections, getCurrentContextId, getSubmissionDetail, getPublication, getContributors, createContributor, deleteContributor, AUTHOR_USER_GROUP_ID } from '@/services/ojs'
 import { useAuth } from '@/composables/useAuth'
 import { ROLES } from '@/config/constants'
 

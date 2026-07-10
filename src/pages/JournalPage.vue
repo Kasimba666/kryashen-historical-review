@@ -126,7 +126,7 @@
 </template>
 
 <script>
-import { ArrowRight, Plus, Edit, Delete } from '@element-plus/icons-vue'
+import { Plus, Edit, Delete } from '@element-plus/icons-vue'
 import { getIssues, createIssue, updateIssue, deleteIssue } from '@/services/ojs'
 import { useAuth } from '@/composables/useAuth'
 import { ROLES } from '@/config/constants'
@@ -134,7 +134,6 @@ import { ROLES } from '@/config/constants'
 export default {
   name: 'JournalPage',
   components: {
-    ArrowRight,
     Plus,
     Edit,
     Delete
@@ -403,11 +402,5 @@ export default {
   flex-direction: column;
   gap: 4px;
   margin-top: 4px;
-}
-
-.issue-arrow {
-  flex-shrink: 0;
-  margin-top: 4px;
-  color: var(--el-text-color-placeholder);
 }
 </style>
