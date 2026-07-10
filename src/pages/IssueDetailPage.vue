@@ -214,17 +214,24 @@
           </div>
         </el-form-item>
         <el-form-item label="Ключевые слова">
-          <el-select
-            v-model="articleForm.keywordsArr"
-            class="keywords-select"
-            multiple
-            filterable
-            allow-create
-            default-first-option
-            :reserve-keyword="false"
-            placeholder="Введите и нажмите Enter"
-            style="width: 100%;"
-          />
+          <div class="keywords-input">
+            <el-tag
+              v-for="(kw, idx) in articleForm.keywordsArr"
+              :key="kw"
+              closable
+              size="small"
+              class="keyword-tag"
+              @close="removeKeyword(idx)"
+            >{{ kw }}</el-tag>
+            <el-input
+              v-model="newKeyword"
+              class="keyword-text"
+              size="small"
+              placeholder="Введите и нажмите Enter"
+              @keyup.enter="addKeyword"
+            />
+            <el-button size="small" @click="addKeyword">Добавить</el-button>
+          </div>
         </el-form-item>
         <el-form-item label="PDF файл">
           <el-upload
@@ -281,17 +288,24 @@
           </div>
         </el-form-item>
         <el-form-item label="Ключевые слова">
-          <el-select
-            v-model="articleForm.keywordsArr"
-            class="keywords-select"
-            multiple
-            filterable
-            allow-create
-            default-first-option
-            :reserve-keyword="false"
-            placeholder="Введите и нажмите Enter"
-            style="width: 100%;"
-          />
+          <div class="keywords-input">
+            <el-tag
+              v-for="(kw, idx) in articleForm.keywordsArr"
+              :key="kw"
+              closable
+              size="small"
+              class="keyword-tag"
+              @close="removeKeyword(idx)"
+            >{{ kw }}</el-tag>
+            <el-input
+              v-model="newKeyword"
+              class="keyword-text"
+              size="small"
+              placeholder="Введите и нажмите Enter"
+              @keyup.enter="addKeyword"
+            />
+            <el-button size="small" @click="addKeyword">Добавить</el-button>
+          </div>
         </el-form-item>
         <el-form-item label="Страницы">
           <el-input v-model="articleForm.pages" placeholder="Например: 45-67" />
@@ -360,6 +374,7 @@ export default {
         pages: '',
         sectionId: null
       },
+      newKeyword: '',
       pdfFileList: [],
       sections: [],
       articlesData: [],
@@ -460,6 +475,19 @@ export default {
       if (this.articleForm.authors.length === 0) {
         this.articleForm.authors.push({ givenName: '', familyName: '', email: '' })
       }
+    },
+    // Добавить введённое ключевое слово в список (без popup-подсказок).
+    addKeyword: function () {
+      var val = (this.newKeyword || '').trim()
+      if (!val) return
+      if (this.articleForm.keywordsArr.indexOf(val) === -1) {
+        this.articleForm.keywordsArr.push(val)
+      }
+      this.newKeyword = ''
+    },
+    removeKeyword: function (idx) {
+      if (!Array.isArray(this.articleForm.keywordsArr)) return
+      this.articleForm.keywordsArr.splice(idx, 1)
     },
     // Проверка заполненности обязательных полей авторов.
     // Email обязателен для каждого контрибьютера (требование OJS).
@@ -682,6 +710,7 @@ export default {
         pages: article.pages || '',
         status: article.status || 'submitted'
       }
+      this.newKeyword = ''
       // Загружаем реальных контрибьютеров из БД, чтобы их можно было отредактировать
       getSubmissionDetail(article.id)
         .then(function (sub) {
@@ -842,6 +871,7 @@ export default {
         contextId: null
       }
       this.pdfFileList = []
+      this.newKeyword = ''
       this.createArticleDialogVisible = true
 
       getCurrentContextId()
@@ -1211,15 +1241,30 @@ export default {
   padding: 20px;
 }
 
-// Крестик удаления ключевого слова — красным
-.keywords-select {
-  :deep(.el-tag__close) {
-    color: hsl(0, 100%, 50%);
-  }
+// Поле ключевых слов: теги + текстовый ввод без выпадающего popup.
+.keywords-input {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
 
-  :deep(.el-tag__close:hover) {
-    color: hsl(0, 100%, 40%);
-    background: transparent;
-  }
+.keywords-input .keyword-tag {
+  margin: 0;
+}
+
+// Крестик удаления ключевого слова — красным
+.keywords-input .keyword-tag .el-tag__close {
+  color: hsl(0, 100%, 50%);
+}
+
+.keywords-input .keyword-tag .el-tag__close:hover {
+  color: hsl(0, 100%, 40%);
+  background: transparent;
+}
+
+.keywords-input .keyword-text {
+  flex: 1 1 140px;
+  min-width: 140px;
 }
 </style>
