@@ -72,8 +72,9 @@
             shadow="hover"
           >
             <div class="article-info">
-              <h3 class="article-title">{{ getLocalized(article.title) }}</h3>
-              <p v-if="article.authors" class="article-authors">{{ article.authors }}</p>
+              <p class="article-title-authors">
+                <span v-if="article.titleRu" class="article-title">{{ article.titleRu }}</span><span v-if="article.titleRu && article.titleEn" class="article-title-sep"> / </span><span v-if="article.titleEn" class="article-title-en">{{ article.titleEn }}</span><span v-if="article.authors" class="article-authors"> — {{ article.authors }}</span>
+              </p>
               <p v-if="article.sectionTitle" class="article-section">
                 <el-tag size="small" type="info">{{ article.sectionTitle }}</el-tag>
               </p>
@@ -129,14 +130,9 @@
       <el-skeleton :loading="loadingSubmissions" animated :count="5">
         <template #default>
           <el-table :data="availableSubmissions" stripe style="width: 100%" max-height="400">
-            <el-table-column prop="title" label="Название">
+            <el-table-column label="Название (RU/EN) и авторы">
               <template #default="scope">
-                {{ getLocalized(scope.row.title) }}
-              </template>
-            </el-table-column>
-            <el-table-column prop="authors" label="Авторы" width="200">
-              <template #default="scope">
-                {{ scope.row.authors || 'Не указаны' }}
+                <template v-if="scope.row.title">{{ scope.row.title.ru || '' }}<template v-if="scope.row.title && scope.row.title.en"> / {{ scope.row.title.en }}</template></template><template v-else>{{ getLocalized(scope.row.title) }}</template><template v-if="scope.row.authors"> — {{ scope.row.authors }}</template>
               </template>
             </el-table-column>
             <el-table-column label="Действия" width="100" fixed="right">
@@ -218,7 +214,17 @@
           </div>
         </el-form-item>
         <el-form-item label="Ключевые слова">
-          <el-input v-model="articleForm.keywords" placeholder="Ключевые слова через запятую" />
+          <el-select
+            v-model="articleForm.keywordsArr"
+            class="keywords-select"
+            multiple
+            filterable
+            allow-create
+            default-first-option
+            :reserve-keyword="false"
+            placeholder="Введите и нажмите Enter"
+            style="width: 100%;"
+          />
         </el-form-item>
         <el-form-item label="PDF файл">
           <el-upload
@@ -274,6 +280,19 @@
             </el-button>
           </div>
         </el-form-item>
+        <el-form-item label="Ключевые слова">
+          <el-select
+            v-model="articleForm.keywordsArr"
+            class="keywords-select"
+            multiple
+            filterable
+            allow-create
+            default-first-option
+            :reserve-keyword="false"
+            placeholder="Введите и нажмите Enter"
+            style="width: 100%;"
+          />
+        </el-form-item>
         <el-form-item label="Страницы">
           <el-input v-model="articleForm.pages" placeholder="Например: 45-67" />
         </el-form-item>
@@ -299,7 +318,7 @@
 
 <script>
 import { ArrowLeft, Document, Download, Plus, Edit, Delete, Upload } from '@element-plus/icons-vue'
-import { getIssueDetail, getSubmissions, addArticleToIssue, removeArticleFromIssue, createSubmission, createPublication, updatePublication, uploadSubmissionFile, createGalley, submitToProduction, catalogSubmission, getSections, getCurrentContextId, getSubmissionDetail, getContributors, createContributor, deleteContributor, AUTHOR_USER_GROUP_ID } from '@/services/ojs'
+import { getIssueDetail, getSubmissions, addArticleToIssue, removeArticleFromIssue, createSubmission, createPublication, updatePublication, uploadSubmissionFile, createGalley, submitToProduction, catalogSubmission, getSections, getCurrentContextId, getSubmissionDetail, getPublication, getContributors, createContributor, deleteContributor, AUTHOR_USER_GROUP_ID } from '@/services/ojs'
 import { useAuth } from '@/composables/useAuth'
 import { ROLES } from '@/config/constants'
 
@@ -336,7 +355,7 @@ export default {
         abstractRu: '',
         abstractEn: '',
         authors: [{ givenName: '', familyName: '', email: '' }],
-        keywords: '',
+        keywordsArr: [],
         pdfFile: null,
         pages: '',
         sectionId: null
@@ -345,7 +364,8 @@ export default {
       sections: [],
       articlesData: [],
       _editingSubmissionId: null,
-      _editingPublicationId: null
+      _editingPublicationId: null,
+      _editingPublicationVersion: null
     }
   },
   computed: {
@@ -378,6 +398,22 @@ export default {
     getLocalized: function (obj) {
       if (!obj) return ''
       return obj.ru || obj.en || ''
+    },
+    // OJS возвращает keywords либо как массив строк { ru: ["a","b"] },
+    // либо (из прямого эндпоинта публикации) как массив объектов
+    // { ru: [{ name: "a" }, { name: "b" }] }. Приводим к массиву строк.
+    keywordsToArray: function (kwObj) {
+      if (!kwObj) return []
+      var arr = kwObj.ru || kwObj.en || []
+      if (!Array.isArray(arr)) return []
+      return arr
+        .map(function (k) {
+          if (typeof k === 'string') return k
+          if (k && typeof k === 'object' && k.name) return k.name
+          return ''
+        })
+        .map(function (s) { return (s || '').trim() })
+        .filter(Boolean)
     },
     getAuthorFullName: function (author) {
       if (!author) return ''
@@ -511,6 +547,11 @@ export default {
           self.loading = false
         })
     },
+    // Обогащаем статьи выпуска данными из OJS:
+    // сам объект issue содержит только ID статей, без авторов. Поэтому
+    // для каждой статьи грузим submission, а контрибьютеров-авторов —
+    // через отдельный эндпоинт getContributors (авторитетный источник,
+    // тот же, что используется в диалоге редактирования).
     enrichArticles: function (articleIds) {
       var self = this
       if (!articleIds || !articleIds.length) {
@@ -523,14 +564,16 @@ export default {
             var pub = sub.currentPublication ||
               (sub.publications && sub.publications[0]) || {}
             var galley = (pub.galleys && pub.galleys[0]) || null
-            var authorsStr = (pub.authors || []).map(function (a) {
-              return self.getAuthorFullName(a)
-            }).filter(Boolean).join(', ')
-            var keywordsArr = (pub.keywords && (pub.keywords.ru || pub.keywords.en)) || []
-            return {
+            var titleObj = (pub.title || sub.title) || {}
+            var keywordsArr = self.keywordsToArray(pub.keywords)
+            var publicationId = sub.currentPublicationId ||
+              (sub.publications && sub.publications[0] && sub.publications[0].id)
+
+            var base = {
               id: articleId,
-              title: pub.title || sub.title,
-              authors: authorsStr,
+              titleRu: titleObj.ru || '',
+              titleEn: titleObj.en || '',
+              authors: '',
               abstract: pub.abstract,
               keywords: keywordsArr,
               sectionId: pub.sectionId,
@@ -539,6 +582,33 @@ export default {
               status: sub.status,
               galley: galley
             }
+
+            if (!publicationId) {
+              base.keywords = keywordsArr
+              return base
+            }
+            // Контрибьютеров-авторов и ключевые слова грузим через
+            // отдельные эндпоинты: authors — getContributors, keywords —
+            // только из прямого эндпоинта публикации (в ответе
+            // /submissions/{id} поле keywords всегда пустое).
+            return Promise.all([
+              getContributors(articleId, publicationId),
+              getPublication(articleId, publicationId)
+            ])
+              .then(function (res) {
+                var contributors = res[0] || []
+                var pubData = res[1] || {}
+                base.authors = contributors.map(function (c) {
+                  return self.getAuthorFullName(c)
+                }).filter(Boolean).join(', ')
+                if (pubData && pubData.keywords) {
+                  base.keywords = self.keywordsToArray(pubData.keywords)
+                } else {
+                  base.keywords = keywordsArr
+                }
+                return base
+              })
+              .catch(function () { return base })
           })
           .catch(function () {
             return null
@@ -608,6 +678,7 @@ export default {
         titleRu: this.getLocalized(article.title),
         titleEn: article.title && article.title.en || '',
         authors: [{ givenName: '', familyName: '', email: '' }],
+        keywordsArr: (article.keywords || []).slice(),
         pages: article.pages || '',
         status: article.status || 'submitted'
       }
@@ -618,10 +689,23 @@ export default {
             (sub.publications && sub.publications[0] && sub.publications[0].id)
           self._editingSubmissionId = article.id
           self._editingPublicationId = publicationId
+          self._editingPublicationVersion = (sub.currentPublication && sub.currentPublication.version) ||
+            (sub.publications && sub.publications[0] && sub.publications[0].version) || 1
           if (!publicationId) return null
-          return getContributors(article.id, publicationId)
+          return Promise.all([
+            getContributors(article.id, publicationId),
+            getPublication(article.id, publicationId)
+          ])
         })
-        .then(function (contributors) {
+        .then(function (res) {
+          if (!res) return
+          var contributors = res[0] || []
+          var pubData = res[1] || {}
+          // Ключевые слова достоверно приходят только из прямого
+          // эндпоинта публикации (в ответе submission их нет).
+          if (pubData && pubData.keywords) {
+            self.articleForm.keywordsArr = self.keywordsToArray(pubData.keywords)
+          }
           if (!contributors || !contributors.length) return
           var authorsArr = contributors.map(function (c) {
             return {
@@ -668,11 +752,31 @@ export default {
         var contributors = self.buildContributorsPayload(submissionId)
         return self.saveContributors(submissionId, publicationId, contributors)
           .then(function () {
-            self.$message && self.$message.success('Авторы сохранены')
+            // Обновляем название и ключевые слова публикации.
+            // OJS требует поле version при PUT /publications/{id},
+            // иначе возвращает 400 и данные не сохраняются.
+            var pubData = { version: self._editingPublicationVersion || 1 }
+            if (self.articleForm.titleRu || self.articleForm.titleEn) {
+              pubData.title = {}
+              if (self.articleForm.titleRu) pubData.title.ru = self.articleForm.titleRu
+              if (self.articleForm.titleEn) pubData.title.en = self.articleForm.titleEn
+            }
+            var kwList = (self.articleForm.keywordsArr || [])
+              .map(function (s) { return (s || '').trim() })
+              .filter(Boolean)
+            if (kwList.length) {
+              pubData.keywords = { ru: kwList }
+            }
+            if (Object.keys(pubData).length <= 1) return
+            return updatePublication(submissionId, publicationId, pubData)
+          })
+          .then(function () {
+            self.$message && self.$message.success('Изменения сохранены')
             self.editArticleDialogVisible = false
             self.editingArticle = null
             self._editingSubmissionId = null
             self._editingPublicationId = null
+            self._editingPublicationVersion = null
             self.loadIssue()
           })
       }
@@ -731,7 +835,7 @@ export default {
         abstractRu: '',
         abstractEn: '',
         authors: [{ givenName: '', familyName: '', email: '' }],
-        keywords: '',
+        keywordsArr: [],
         pdfFile: null,
         pages: '',
         sectionId: null,
@@ -778,11 +882,10 @@ export default {
       if (!this.articleForm.sectionId) this.articleForm.sectionId = 1
       var sectionId = parseInt(this.articleForm.sectionId, 10)
 
-      // keywords: строка через запятую -> { ru: [...] }
+      // keywords: массив (el-select multiple) -> { ru: [...] }
       var keywords = {}
-      var kwList = (this.articleForm.keywords || '')
-        .split(',')
-        .map(function (s) { return s.trim() })
+      var kwList = (this.articleForm.keywordsArr || [])
+        .map(function (s) { return (s || '').trim() })
         .filter(Boolean)
       if (kwList.length) {
         keywords = { ru: kwList }
@@ -827,8 +930,10 @@ export default {
         .then(function () {
           // Шаг 3b. Авторы пишутся через отдельный эндпоинт contributors
           // (PUT publication с полем authors OJS игнорирует).
-          var contributors = self.buildContributorsPayload(submissionId)
-          return self.saveContributors(submissionId, self._publicationId, contributors)
+          // submissionId берём из self._submissionId, т.к. одноимённая
+          // var-переменная недоступна вне первого .then-колбэка.
+          var contributors = self.buildContributorsPayload(self._submissionId)
+          return self.saveContributors(self._submissionId, self._publicationId, contributors)
         })
         .then(function () {
           if (!self.articleForm.pdfFile) return
@@ -1000,6 +1105,16 @@ export default {
   font-weight: 500;
 }
 
+.article-title-en {
+  font-size: 0.85rem;
+  color: var(--el-text-color-secondary);
+}
+
+.article-title-sep {
+  font-size: 0.85rem;
+  color: var(--el-text-color-placeholder);
+}
+
 .article-authors {
   margin: 0;
   font-size: 0.85rem;
@@ -1094,5 +1209,17 @@ export default {
   align-items: center;
   gap: 8px;
   padding: 20px;
+}
+
+// Крестик удаления ключевого слова — красным
+.keywords-select {
+  :deep(.el-tag__close) {
+    color: hsl(0, 100%, 50%);
+  }
+
+  :deep(.el-tag__close:hover) {
+    color: hsl(0, 100%, 40%);
+    background: transparent;
+  }
 }
 </style>

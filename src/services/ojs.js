@@ -536,6 +536,22 @@ function assignPublicationToIssue(submissionId, issueId) {
 // Авторская группа "Автор" имеет userGroupId = 14.
 // ========================================
 
+// Получить полные данные конкретной публикации (включая keywords,
+// которые в ответе /submissions/{id} НЕ возвращаются, в отличие от
+// прямого эндпоинта /submissions/{id}/publications/{id}).
+export function getPublication(submissionId, publicationId) {
+  return fetchThroughProxy(
+    API_BASE + '/api/v1/submissions/' + submissionId + '/publications/' + publicationId,
+    { headers: authHeaders }
+  )
+    .then(function (response) {
+      if (!response.ok) {
+        throw new Error('Ошибка получения публикации (статус: ' + response.status + ')')
+      }
+      return response.json()
+    })
+}
+
 // Получить список contributors публикации
 export function getContributors(submissionId, publicationId) {
   return fetchThroughProxy(
