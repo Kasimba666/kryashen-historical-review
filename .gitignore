@@ -41,3 +41,4 @@ __screenshots__/
 # Environment (keep .env.production for CI/CD builds)
 .env.local
 .env.*.local
+ojs-3.5.0-4

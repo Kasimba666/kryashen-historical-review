@@ -1,0 +1,5 @@
+c = open('src/pages/IssueDetailPage.vue', encoding='utf-8').read()
+print('enableContextLocale("en_US"):', 'enableContextLocale("en_US")' in c)
+print('enableContextLocale("en") count:', c.count('enableContextLocale("en")'))
+print('enableContextLocale("en"):', 'enableContextLocale("en")' in c)
+print('enableContextLocale total:', c.count('enableContextLocale'))
