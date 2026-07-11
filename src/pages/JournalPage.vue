@@ -44,6 +44,26 @@
                   <el-icon><Edit /></el-icon>
                 </el-button>
                 <el-button
+                  v-if="!issue.published"
+                  size="small"
+                  type="success"
+                  :loading="publishingId === issue.id"
+                  @click="doPublish(issue)"
+                  title="Опубликовать"
+                >
+                  <el-icon><Upload /></el-icon>
+                </el-button>
+                <el-button
+                  v-if="issue.published"
+                  size="small"
+                  type="warning"
+                  :loading="unpublishingId === issue.id"
+                  @click="doUnpublish(issue)"
+                  title="Снять с публикации"
+                >
+                  <el-icon><Download /></el-icon>
+                </el-button>
+                <el-button
                   size="small"
                   type="danger"
                   @click="confirmDelete(issue)"
@@ -126,8 +146,8 @@
 </template>
 
 <script>
-import { Plus, Edit, Delete } from '@element-plus/icons-vue'
-import { getIssues, createIssue, updateIssue, deleteIssue } from '@/services/ojs'
+import { Plus, Edit, Delete, Upload, Download } from '@element-plus/icons-vue'
+import { getIssues, createIssue, updateIssue, deleteIssue, publishIssue, unpublishIssue } from '@/services/ojs'
 import { useAuth } from '@/composables/useAuth'
 import { ROLES } from '@/config/constants'
 
@@ -136,7 +156,9 @@ export default {
   components: {
     Plus,
     Edit,
-    Delete
+    Delete,
+    Upload,
+    Download
   },
   data() {
     return {
@@ -148,6 +170,8 @@ export default {
       deleteDialogVisible: false,
       deletingIssue: null,
       deleting: false,
+      publishingId: null,
+      unpublishingId: null,
       form: {
         titleRu: '',
         titleEn: '',
@@ -278,6 +302,38 @@ export default {
     confirmDelete(issue) {
       this.deletingIssue = issue
       this.deleteDialogVisible = true
+    },
+    doPublish(issue) {
+      if (!issue) return
+      var self = this
+      this.publishingId = issue.id
+      publishIssue(issue.id)
+        .then(function () {
+          self.$message && self.$message.success('Выпуск опубликован')
+          self.loadIssues()
+        })
+        .catch(function (error) {
+          self.$message && self.$message.error(error.message || 'Не удалось опубликовать выпуск')
+        })
+        .finally(function () {
+          self.publishingId = null
+        })
+    },
+    doUnpublish(issue) {
+      if (!issue) return
+      var self = this
+      this.unpublishingId = issue.id
+      unpublishIssue(issue.id)
+        .then(function () {
+          self.$message && self.$message.success('Выпуск снят с публикации')
+          self.loadIssues()
+        })
+        .catch(function (error) {
+          self.$message && self.$message.error(error.message || 'Не удалось снять выпуск с публикации')
+        })
+        .finally(function () {
+          self.unpublishingId = null
+        })
     },
     deleteIssue() {
       if (!this.deletingIssue) return

@@ -224,6 +224,57 @@ export function getCurrentContextId() {
     })
 }
 
+// Включить локаль (например 'en') для текущего журнала (context).
+// OJS при сохранении многоязычных полей метаданных (title.en, abstract.en и т.п.)
+// валидирует, что локаль присутствует в supportedLocales / supportedFormLocales
+// журнала. Если 'en' там нет — PUT /publications/{id} возвращает 400.
+export function enableContextLocale(locale) {
+  locale = locale || 'en'
+  return getCurrentContextId()
+    .then(function (contextId) {
+      return getJournalInfo().then(function (journal) {
+        if (!journal) {
+          throw new Error('Журнал не найден')
+        }
+        var primaryLocale = journal.primaryLocale || 'ru'
+        var supported = Array.isArray(journal.supportedLocales)
+          ? journal.supportedLocales.slice()
+          : [primaryLocale]
+        var formLocales = Array.isArray(journal.supportedFormLocales)
+          ? journal.supportedFormLocales.slice()
+          : [primaryLocale]
+
+        if (supported.indexOf(locale) === -1) supported.push(locale)
+        if (formLocales.indexOf(locale) === -1) formLocales.push(locale)
+
+        var payload = {
+          primaryLocale: primaryLocale,
+          supportedLocales: supported,
+          supportedFormLocales: formLocales
+        }
+
+        return fetchThroughProxy(API_BASE + '/api/v1/contexts/' + contextId, {
+          method: 'PUT',
+          headers: jsonAuthHeaders,
+          body: JSON.stringify(payload)
+        })
+      })
+    })
+    .then(function (response) {
+      if (!response.ok) {
+        return response.text().then(function (text) {
+          var errMsg = 'Ошибка включения локали ' + locale + ' (статус: ' + response.status + ')'
+          try {
+            var err = JSON.parse(text)
+            if (err.errorMessage) errMsg = err.errorMessage
+          } catch (e) {}
+          throw new Error(errMsg)
+        })
+      }
+      return true
+    })
+}
+
 export function getIssues() {
   return fetchThroughProxy(API_BASE + '/api/v1/issues', { headers: authHeaders })
     .then(function (response) {
@@ -756,44 +807,169 @@ export function getIssueDetail(id) {
     })
 }
 
-export function createIssue(data) {
-  return fetchThroughProxy(API_BASE + '/api/v1/issues', {
-    method: 'POST',
-    headers: jsonAuthHeaders,
-    body: JSON.stringify(data)
-  })
-    .then(function (response) {
-      return response.text().then(function (text) {
-        if (!response.ok) {
-          var errMsg = 'Ошибка создания выпуска (статус: ' + response.status + ')'
-          try {
-            var err = JSON.parse(text)
-            if (err.errorMessage) errMsg = err.errorMessage
-          } catch (e) {}
-          throw new Error(errMsg)
-        }
-        try { return JSON.parse(text) } catch (e) { return {} }
-      })
-    })
-}
+// ========================================
+// Управление выпусками через component-handler ($$$call$$$)
+// REST API /api/v1/issues в OJS 3.5 НЕ поддерживает создание/изменение/
+// удаление/публикацию выпусков. Эти операции доступны только через
+// компонент-обработчики (IssueGridHandler): publishIssue, unpublishIssue,
+// deleteIssue, updateIssue (создание/редактирование через IssueForm).
+// Запросы идут с cookie-сессией и CSRF-токеном (как обычная форма OJS),
+// поэтому НЕ используем JSON/Bearer и кастомные заголовки (чтобы не было
+// CORS-preflight). CSRF передаём полем/параметром csrfToken.
+// ========================================
 
-export function updateIssue(id, data) {
-  // OJS API не поддерживает PUT/PATCH для /api/v1/issues/{id}
-  // Возвращаем успех, чтобы цепочка промисов продолжилась
-  return Promise.resolve({ id: id })
-}
-
-export function deleteIssue(id) {
-  return fetchThroughProxy(API_BASE + '/api/v1/issues/' + id, {
-    method: 'DELETE',
-    headers: authHeaders
-  })
-    .then(function (response) {
-      if (!response.ok) {
-        return response.json().then(function (err) {
-          throw new Error(err.errorMessage || 'Ошибка удаления выпуска (статус: ' + response.status + ')')
+// Получить CSRF-токен сессии OJS. Работает как ДО входа (страница логина
+// содержит скрытое поле csrfToken), так и ПОСЛЕ (dashboard содержит токен
+// в разметке/JSON). Используется для component-handler запросов.
+export function getComponentToken() {
+  function extract(text) {
+    var m = text.match(/name="csrfToken"\s+(?:value|content)="([^"]+)"/) ||
+            text.match(/"csrfToken"\s*:\s*"([^"]+)"/) ||
+            text.match(/csrfToken[=:]\s*"?([a-f0-9]{16,})/i)
+    return m ? m[1] : null
+  }
+  return fetchThroughProxy(API_BASE + '/ru/login', { credentials: 'include' })
+    .then(function (response) { return response.text() })
+    .then(function (html) {
+      var token = extract(html)
+      if (token) return token
+      // Уже авторизованы — токен в dashboard
+      return fetchThroughProxy(API_BASE + '/ru', { credentials: 'include' })
+        .then(function (response) { return response.text() })
+        .then(function (html2) {
+          var token2 = extract(html2)
+          if (!token2) throw new Error('CSRF-токен не найден (войдите в систему)')
+          return token2
         })
-      }
-      return response.json()
     })
+}
+
+function buildFormBody(obj) {
+  return Object.keys(obj).map(function (k) {
+    return encodeURIComponent(k) + '=' + encodeURIComponent(obj[k] == null ? '' : obj[k])
+  }).join('&')
+}
+
+// Вызов component-handler для выпусков.
+// gridOp — путь вида 'future-issue-grid/update-issue',
+//          'issue-grid/publish-issue', 'back-issue-grid/unpublish-issue',
+//          'back-issue-grid/delete-issue'.
+// issueId — ID выпуска (для create = null).
+// formObj — поля формы (для create/update) или null.
+// extraParams — доп. query-параметры (напр. confirmed=1).
+function callIssueComponent(gridOp, issueId, formObj, extraParams) {
+  return getComponentToken().then(function (csrf) {
+    var query = 'csrfToken=' + encodeURIComponent(csrf)
+    if (issueId) query += '&issueId=' + encodeURIComponent(issueId)
+    if (extraParams) {
+      Object.keys(extraParams).forEach(function (k) {
+        query += '&' + k + '=' + encodeURIComponent(extraParams[k])
+      })
+    }
+    var url = API_BASE + '/$$$call$$$/grid/issues/' + gridOp + '?' + query
+
+    var options = {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Accept': 'application/json, text/javascript, */*; q=0.01'
+      }
+    }
+    if (formObj) {
+      var body = buildFormBody(formObj)
+      body += '&csrfToken=' + encodeURIComponent(csrf)
+      options.body = body
+    }
+    return fetchThroughProxy(url, options)
+  })
+}
+
+// Обработка ответа component-handler (возвращает JSONMessage в JSON).
+function handleComponentResponse(prefix) {
+  return function (response) {
+    return response.text().then(function (text) {
+      if (!response.ok) {
+        throw new Error(prefix + ' (статус: ' + response.status + ')')
+      }
+      try {
+        var json = JSON.parse(text)
+        if (json && json.status === false) {
+          var msg = (json.content && json.content.replace(/<[^>]+>/g, ' ').trim()) ||
+                    json.errorMessage || 'неизвестная ошибка'
+          throw new Error(prefix + ': ' + msg)
+        }
+      } catch (e) {
+        if (e instanceof SyntaxError) {
+          // Ответ не JSON (напр. HTML контента) — считаем успехом
+        } else {
+          throw e
+        }
+      }
+      return true
+    })
+  }
+}
+
+// Собрать поля формы IssueForm из данных выпуска.
+function issueFormFields(data) {
+  return {
+    'title[ru]': (data.title && data.title.ru) || '',
+    'title[en]': (data.title && data.title.en) || '',
+    'description[ru]': (data.description && data.description.ru) || '',
+    'description[en]': (data.description && data.description.en) || '',
+    'volume': data.volume || '',
+    'number': data.number || '',
+    'year': data.year || '',
+    'showVolume': 1,
+    'showNumber': 1,
+    'showYear': 1,
+    'showTitle': 1
+  }
+}
+
+// Создать новый выпуск (через IssueForm::execute, issueId отсутствует).
+export function createIssue(data) {
+  var form = issueFormFields(data || {})
+  if (data && data.datePublished) form['datePublished'] = data.datePublished
+  return callIssueComponent('future-issue-grid/update-issue', null, form)
+    .then(handleComponentResponse('Ошибка создания выпуска'))
+}
+
+// Обновить существующий выпуск.
+export function updateIssue(id, data) {
+  if (!id) return createIssue(data)
+  var form = issueFormFields(data || {})
+  if (data && data.datePublished) form['datePublished'] = data.datePublished
+  return callIssueComponent('future-issue-grid/update-issue', id, form)
+    .then(handleComponentResponse('Ошибка обновления выпуска'))
+}
+
+// Опубликовать выпуск.
+// НЕОПУБЛИКОВАННЫЙ выпуск публикуется через FutureIssueGridHandler
+// (grid 'future-issue-grid'), как это делает штатный UI OJS (форма
+// assignPublicIdentifiersForm.tpl шлёт запрос именно на
+// grid.issues.FutureIssueGridHandler?op=publishIssue). Использование
+// 'issue-grid' (BackIssueGridHandler) для неопубликованного выпуска
+// приводит к 500-й ошибке на сервере.
+// Форма подтверждения содержит поля: issueId, confirmed=1,
+// sendIssueNotification (по умолчанию включён), csrfToken.
+export function publishIssue(id) {
+  return callIssueComponent('future-issue-grid/publish-issue', id, {
+    confirmed: 1,
+    sendIssueNotification: 0
+  })
+    .then(handleComponentResponse('Ошибка публикации выпуска'))
+}
+
+// Снять выпуск с публикации (BackIssueGridHandler::unpublishIssue).
+export function unpublishIssue(id) {
+  return callIssueComponent('back-issue-grid/unpublish-issue', id, null)
+    .then(handleComponentResponse('Ошибка снятия выпуска с публикации'))
+}
+
+// Удалить выпуск (IssueGridHandler::deleteIssue).
+export function deleteIssue(id) {
+  return callIssueComponent('back-issue-grid/delete-issue', id, null)
+    .then(handleComponentResponse('Ошибка удаления выпуска'))
 }

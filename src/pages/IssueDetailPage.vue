@@ -23,6 +23,26 @@
                 <el-tag v-if="!issue.published" type="warning">Черновик</el-tag>
               </div>
               <p v-if="issue.identification" class="issue-identification">{{ issue.identification }}</p>
+              <div v-if="canManageArticles" class="issue-detail-actions">
+                <el-button
+                  v-if="!issue.published"
+                  type="success"
+                  size="small"
+                  :loading="publishing"
+                  @click="doPublish"
+                >
+                  <el-icon><Upload /></el-icon> Опубликовать
+                </el-button>
+                <el-button
+                  v-if="issue.published"
+                  type="warning"
+                  size="small"
+                  :loading="unpublishing"
+                  @click="doUnpublish"
+                >
+                  <el-icon><Download /></el-icon> Снять с публикации
+                </el-button>
+              </div>
             </div>
           </div>
         </el-card>
@@ -332,7 +352,7 @@
 
 <script>
 import { ArrowLeft, Document, Download, Plus, Edit, Delete, Upload } from '@element-plus/icons-vue'
-import { getIssueDetail, getSubmissions, addArticleToIssue, removeArticleFromIssue, createSubmission, updatePublication, uploadSubmissionFile, createGalley, submitToProduction, catalogSubmission, getSections, getCurrentContextId, getSubmissionDetail, getPublication, getContributors, createContributor, deleteContributor, AUTHOR_USER_GROUP_ID } from '@/services/ojs'
+import { getIssueDetail, getSubmissions, addArticleToIssue, removeArticleFromIssue, createSubmission, updatePublication, uploadSubmissionFile, createGalley, submitToProduction, catalogSubmission, getSections, getCurrentContextId, getSubmissionDetail, getPublication, getContributors, createContributor, deleteContributor, enableContextLocale, publishIssue, unpublishIssue, AUTHOR_USER_GROUP_ID } from '@/services/ojs'
 import { useAuth } from '@/composables/useAuth'
 import { ROLES } from '@/config/constants'
 
@@ -380,7 +400,9 @@ export default {
       articlesData: [],
       _editingSubmissionId: null,
       _editingPublicationId: null,
-      _editingPublicationVersion: null
+      _editingPublicationVersion: null,
+      publishing: false,
+      unpublishing: false
     }
   },
   computed: {
@@ -702,9 +724,12 @@ export default {
       this.editingArticle = article
       var self = this
       this.editArticleDialogVisible = true
+      // article.titleRu/titleEn — строки из enrichArticles (основной источник).
+      // Если их нет — fallback на article.title (объект {ru, en} из API).
+      var titleObj = article.title || {}
       this.articleForm = {
-        titleRu: this.getLocalized(article.title),
-        titleEn: article.title && article.title.en || '',
+        titleRu: article.titleRu || titleObj.ru || '',
+        titleEn: article.titleEn || titleObj.en || '',
         authors: [{ givenName: '', familyName: '', email: '' }],
         keywordsArr: (article.keywords || []).slice(),
         pages: article.pages || '',
@@ -797,7 +822,27 @@ export default {
               pubData.keywords = { ru: kwList }
             }
             if (Object.keys(pubData).length <= 1) return
-            return updatePublication(submissionId, publicationId, pubData)
+            var doUpdate = function () {
+              return updatePublication(submissionId, publicationId, pubData)
+            }
+            return doUpdate().catch(function (err) {
+              if (self.articleForm.titleEn && /400/.test(String(err.message || ''))) {
+                console.warn('Ошибка 400 при сохранении EN названия:', err.message)
+                console.warn('Тело запроса, вызвавшего 400:', JSON.stringify(pubData))
+                // Сохраняем только русское название (без EN).
+                var fb = { version: self._editingPublicationVersion || 1 }
+                if (self.articleForm.titleRu) fb.title = { ru: self.articleForm.titleRu }
+                if (kwList.length) fb.keywords = { ru: kwList.filter(function (k) { return k && k.trim() }) }
+                return updatePublication(submissionId, publicationId, fb).then(function () {
+                  self.$message && self.$message.warning(
+                    'Английское название не сохранено: журнал не поддерживает локаль «en». ' +
+                    'Сохранено только русское название. Включите English в настройках журнала ' +
+                    '(Settings → Journal → Languages).'
+                  )
+                })
+              }
+              throw err
+            })
           })
           .then(function () {
             self.$message && self.$message.success('Изменения сохранены')
@@ -834,6 +879,38 @@ export default {
         })
         .finally(function () {
           self.savingArticle = false
+        })
+    },
+    doPublish() {
+      if (!this.issue) return
+      var self = this
+      this.publishing = true
+      publishIssue(this.issue.id)
+        .then(function () {
+          self.$message && self.$message.success('Выпуск опубликован')
+          self.loadIssue()
+        })
+        .catch(function (error) {
+          self.$message && self.$message.error(error.message || 'Не удалось опубликовать выпуск')
+        })
+        .finally(function () {
+          self.publishing = false
+        })
+    },
+    doUnpublish() {
+      if (!this.issue) return
+      var self = this
+      this.unpublishing = true
+      unpublishIssue(this.issue.id)
+        .then(function () {
+          self.$message && self.$message.success('Выпуск снят с публикации')
+          self.loadIssue()
+        })
+        .catch(function (error) {
+          self.$message && self.$message.error(error.message || 'Не удалось снять выпуск с публикации')
+        })
+        .finally(function () {
+          self.unpublishing = false
         })
     },
     removeArticle() {
