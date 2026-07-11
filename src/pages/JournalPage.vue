@@ -342,7 +342,7 @@ export default {
       var self = this
       var issueId = this.deletingIssue.id
 
-      deleteIssue(issueId)
+      deleteIssue(issueId, self.deletingIssue.published)
         .then(function () {
           self.$message && self.$message.success('Выпуск удален')
           self.deleteDialogVisible = false

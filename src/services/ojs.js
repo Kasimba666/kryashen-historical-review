@@ -39,6 +39,35 @@ function fetchThroughProxy(url, options) {
   return fetch(url, options)
 }
 
+// Транслитерация кириллицы в латиницу для генерации URL-path выпуска.
+function transliterate(str) {
+  var map = {
+    'а': 'a', 'б': 'b', 'в': 'v', 'г': 'g', 'д': 'd', 'е': 'e', 'ё': 'e',
+    'ж': 'zh', 'з': 'z', 'и': 'i', 'й': 'y', 'к': 'k', 'л': 'l', 'м': 'm',
+    'н': 'n', 'о': 'o', 'п': 'p', 'р': 'r', 'с': 's', 'т': 't', 'у': 'u',
+    'ф': 'f', 'х': 'h', 'ц': 'ts', 'ч': 'ch', 'ш': 'sh', 'щ': 'sch', 'ъ': '',
+    'ы': 'y', 'ь': '', 'э': 'e', 'ю': 'yu', 'я': 'ya',
+    'А': 'A', 'Б': 'B', 'В': 'V', 'Г': 'G', 'Д': 'D', 'Е': 'E', 'Ё': 'E',
+    'Ж': 'Zh', 'З': 'Z', 'И': 'I', 'Й': 'Y', 'К': 'K', 'Л': 'L', 'М': 'M',
+    'Н': 'N', 'О': 'O', 'П': 'P', 'Р': 'R', 'С': 'S', 'Т': 'T', 'У': 'U',
+    'Ф': 'F', 'Х': 'H', 'Ц': 'Ts', 'Ч': 'Ch', 'Ш': 'Sh', 'Щ': 'Sch', 'Ъ': '',
+    'Ы': 'Y', 'Ь': '', 'Э': 'E', 'Ю': 'Yu', 'Я': 'Ya'
+  }
+  return String(str).split('').map(function (ch) {
+    return map[ch] !== undefined ? map[ch] : ch
+  }).join('')
+}
+
+// Преобразовать строку в безопасный URL-path (только [a-z0-9-]).
+function slugify(str) {
+  if (!str) return ''
+  return transliterate(str)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60)
+}
+
 // ========================================
 // Аутентификация
 // ========================================
@@ -823,9 +852,12 @@ export function getIssueDetail(id) {
 // в разметке/JSON). Используется для component-handler запросов.
 export function getComponentToken() {
   function extract(text) {
-    var m = text.match(/name="csrfToken"\s+(?:value|content)="([^"]+)"/) ||
+    var m = text.match(/name="csrf-token"\s+content="([^"]+)"/) ||
+            text.match(/name="csrfToken"\s+(?:value|content)="([^"]+)"/) ||
             text.match(/"csrfToken"\s*:\s*"([^"]+)"/) ||
-            text.match(/csrfToken[=:]\s*"?([a-f0-9]{16,})/i)
+            text.match(/"csrf-token"\s*:\s*"([^"]+)"/) ||
+            text.match(/csrfToken[=:]\s*"?([a-zA-Z0-9]{16,})/i) ||
+            text.match(/csrf-token[=:]\s*"?([a-zA-Z0-9]{16,})/i)
     return m ? m[1] : null
   }
   return fetchThroughProxy(API_BASE + '/ru/login', { credentials: 'include' })
@@ -885,7 +917,70 @@ function callIssueComponent(gridOp, issueId, formObj, extraParams) {
   })
 }
 
+// Проверить, содержит ли HTML формы РЕАЛЬНУЮ ошибку валидации.
+// OJS при ошибке валидации рядом с неверным полем рисует .formError,
+// а в #issueDataNotification — текст ошибки (с классом notifyError/
+// notifyWarning). ВАЖНО: хендлер future-issue-grid/update-issue при
+// УСПЕШНОМ сохранении тоже возвращает form (статус true, content=<form>),
+// но БЕЗ .formError и с пустым #issueDataNotification — это НЕ ошибка.
+// Поэтому «форма вернулась» ≠ «валидация не прошла».
+function formHasErrors(html) {
+  var cleaned = html.replace(/<script[\s\S]*?<\/script>/gi, ' ')
+  // Явные ошибки у полей.
+  if (/class="[^"]*formError[^"]*"/.test(cleaned)) return true
+  // Уведомление с текстом ошибки.
+  var notificationMatch = cleaned.match(/id="issueDataNotification"[^>]*>([\s\S]*?)<\/div>/i)
+  if (notificationMatch) {
+    var nt = notificationMatch[1].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
+    if (nt) return true
+  }
+  return false
+}
+
+// Извлечь ПОНЯТНЫЙ текст ошибки валидации из HTML формы, возвращённого OJS.
+// Вызывается только когда formHasErrors() === true.
+function extractFormError(html) {
+  // Убираем скрипты — они только мешают.
+  var cleaned = html.replace(/<script[\s\S]*?<\/script>/gi, ' ')
+  // Пытаемся вытащить текст уведомления об ошибке.
+  var notificationMatch = cleaned.match(/id="issueDataNotification"[^>]*>([\s\S]*?)<\/div>/i)
+  var parts = []
+  if (notificationMatch) {
+    var nt = notificationMatch[1].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
+    if (nt) parts.push(nt)
+  }
+  // Поля с ошибкой (.formError).
+  var errMatches = cleaned.match(/class="[^"]*formError[^"]*"[^>]*>([\s\S]*?)<\/[a-z]+>/gi)
+  if (errMatches) {
+    errMatches.forEach(function (m) {
+      var t = m.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
+      if (t && parts.indexOf(t) === -1) parts.push(t)
+    })
+  }
+  if (parts.length) {
+    return parts.join('; ').slice(0, 300)
+  }
+  // Запасной вариант: возвращаем общий текст ошибки валидации.
+  return 'проверьте заполнение обязательных полей'
+}
+
+// Извлечь ID выпуска из action-URL формы, возвращённой OJS.
+// После УСПЕШНОГО сохранения OJS перерисовывает форму редактирования,
+// в action которой прописан issueId (.../update-issue?issueId=123).
+// Если сохранение не произошло (форма просто показана снова), issueId
+// пустой — это надёжный признак того, что выпуск НЕ создан.
+function extractIssueIdFromForm(html) {
+  var m = html && html.match(/update-issue\?issueId=(\d+)/)
+  return m ? m[1] : null
+}
+
 // Обработка ответа component-handler (возвращает JSONMessage в JSON).
+// ВНИМАНИЕ: при неудачной валидации формы (IssueForm и т.п.) OJS возвращает
+// JSONMessage(status=true, content=<HTML формы>), т.е. status === true, но
+// тело содержит повторно отрисованную форму с сообщениями об ошибках.
+// Такой ответ НЕ является успехом — выпуск/статья не сохранены. Поэтому
+// если content содержит разметку формы (pkp_form / <form), считаем это
+// ошибкой валидации и выбрасываем понятное сообщение.
 function handleComponentResponse(prefix) {
   return function (response) {
     return response.text().then(function (text) {
@@ -899,9 +994,25 @@ function handleComponentResponse(prefix) {
                     json.errorMessage || 'неизвестная ошибка'
           throw new Error(prefix + ': ' + msg)
         }
+        // status === true. Хендлер update-issue при УСПЕХЕ тоже возвращает
+        // форму (content=<form>), но без ошибок. Считаем ошибкой только
+        // если в форме есть реальные указатели ошибок валидации.
+        if (json && json.status === true && json.content && /pkp_form|<form[\s>]/.test(json.content)) {
+          if (formHasErrors(json.content)) {
+            console.error('[OJS] ответ формы (валидация не прошла):', json.content)
+            throw new Error(prefix + ': ' + (extractFormError(json.content) || 'проверьте заполнение обязательных полей'))
+          }
+        }
       } catch (e) {
         if (e instanceof SyntaxError) {
-          // Ответ не JSON (напр. HTML контента) — считаем успехом
+          // Ответ вообще не JSON (напр. голый HTML) — если похож на форму
+          // с ошибками, это ошибка валидации, иначе считаем успехом.
+          if (/pkp_form|<form[\s>]/.test(text)) {
+            if (formHasErrors(text)) {
+              console.error('[OJS] ответ формы (валидация не прошла):', text)
+              throw new Error(prefix + ': ' + (extractFormError(text) || 'проверьте заполнение обязательных полей'))
+            }
+          }
         } else {
           throw e
         }
@@ -911,13 +1022,39 @@ function handleComponentResponse(prefix) {
   }
 }
 
-// Собрать поля формы IssueForm из данных выпуска.
-function issueFormFields(data) {
-  return {
-    'title[ru]': (data.title && data.title.ru) || '',
-    'title[en]': (data.title && data.title.en) || '',
-    'description[ru]': (data.description && data.description.ru) || '',
-    'description[en]': (data.description && data.description.en) || '',
+// Построить поля формы IssueForm из данных выпуска, подставляя
+// РЕАЛЬНЫЕ коды локалей журнала (напр. 'ru_RU', 'en_US', а не просто 'ru'/'en').
+// OJS требует заполнения названия (title) для ОСНОВНОЙ локали журнала, и
+// имена полей формы используют именно коды локалей журнала (title[ru_RU]).
+// Если слать title[ru] при основной локали ru_RU — валидация падает.
+function issueFormFields(data, journal) {
+  data = data || {}
+  journal = journal || {}
+  var supported = Array.isArray(journal.supportedFormLocales) && journal.supportedFormLocales.length
+    ? journal.supportedFormLocales
+    : (Array.isArray(journal.supportedLocales) && journal.supportedLocales.length ? journal.supportedLocales : ['ru'])
+  var primary = journal.primaryLocale || supported[0] || 'ru'
+
+  // Найти локаль журнала, соответствующую «русскому» или «английскому» вводу.
+  function findLocale(prefix) {
+    for (var i = 0; i < supported.length; i++) {
+      if (supported[i].indexOf(prefix) === 0) return supported[i]
+    }
+    return null
+  }
+  var ruLocale = findLocale('ru') || primary
+  var enLocale = findLocale('en') || primary
+
+  var userRuTitle = (data.title && data.title.ru) || ''
+  var userEnTitle = (data.title && data.title.en) || ''
+  var userRuDesc = (data.description && data.description.ru) || ''
+  var userEnDesc = (data.description && data.description.en) || ''
+
+  // Гарантируем, что название/описание непустые хотя бы в основной локали.
+  var primaryTitle = userRuTitle || userEnTitle
+  var primaryDesc = userRuDesc || userEnDesc
+
+  var fields = {
     'volume': data.volume || '',
     'number': data.number || '',
     'year': data.year || '',
@@ -926,23 +1063,168 @@ function issueFormFields(data) {
     'showYear': 1,
     'showTitle': 1
   }
+
+  // OJS требует поле urlPath (Путь URL — «Необязательный путь для
+  // использования в URL вместо ID»). Если не передать его, форма
+  // выпуска возвращается с ошибкой/повторным показом. Генерируем
+  // уникальный URL-безопасный slug из названия (или из тома/номера/
+  // года), либо из переданного data.urlPath/data.path.
+  var rawPath = data.urlPath || data.path || ''
+  var generatedPath = rawPath
+    ? slugify(rawPath)
+    : (slugify(primaryTitle) || slugify((data.volume || '') + '-' + (data.number || '') + '-' + (data.year || '')))
+  if (!generatedPath) {
+    generatedPath = 'issue-' + Date.now()
+  }
+  fields['urlPath'] = generatedPath
+
+  // OJS-форма сохраняет данные только если в POST-теле присутствует
+  // имя кнопки отправки (submitFormButton). Без него Form::isSubmitted()
+  // возвращает false, и OJS лишь повторно отрисовывает форму, НЕ сохраняя
+  // выпуск (без какой-либо ошибки). Поэтому обязательно шлём кнопку.
+  fields['submitFormButton'] = '1'
+
+  // title[<locale>] для каждой поддерживаемой локали.
+  supported.forEach(function (loc) {
+    var val = ''
+    if (loc === ruLocale) val = userRuTitle || primaryTitle
+    else if (loc === enLocale) val = userEnTitle || primaryTitle
+    else val = primaryTitle // любая прочая локаль получает основное название
+    fields['title[' + loc + ']'] = val
+    fields['description[' + loc + ']'] = (loc === ruLocale ? (userRuDesc || primaryDesc)
+      : (loc === enLocale ? (userEnDesc || primaryDesc) : primaryDesc))
+  })
+
+  // Страховка: OJS в разных версиях/конфигурациях использует либо полные
+  // коды локалей (ru_RU, en_US), либо короткие (ru, en). Чтобы валидация
+  // гарантированно нашла название/описание в основной локали независимо от
+  // используемого кода, дублируем значения и под короткие коды тоже.
+  fields['title[ru]'] = userRuTitle || primaryTitle
+  fields['title[en]'] = userEnTitle || primaryTitle
+  fields['description[ru]'] = userRuDesc || primaryDesc
+  fields['description[en]'] = userEnDesc || primaryDesc
+
+  return fields
+}
+
+// Проверить, что выпуск реально сохранён. Сравниваем список выпусков ДО
+// и ПОСЛЕ отправки формы: если в списке стало на один больше (по крайней
+// мере) — сохранение прошло. Дополнительно, если в ответной форме есть
+// issueId, сверяем его наличие в списке. Если ни одно условие не
+// выполняется — бросаем понятную ошибку вместо ложного «успеха».
+function verifyIssueSaved(operationLabel, issuesBefore, componentText) {
+  var issueId = extractIssueIdFromForm(componentText)
+  return getIssues()
+    .then(function (issuesAfter) {
+      var after = issuesAfter || []
+      var beforeCount = (issuesBefore || []).length
+      var foundById = issueId && after.some(function (it) {
+        return String(it.id) === String(issueId)
+      })
+      // Если issueId нет в форме (для нового выпуска OJS может вернуть
+      // форму создания с пустым issueId), полагаемся на рост числа выпусков.
+      if (foundById) {
+        return { id: issueId }
+      }
+      if (after.length > beforeCount) {
+        // Возвращаем ID последнего добавленного выпуска, если можем.
+        var last = after[after.length - 1]
+        return { id: last ? last.id : null }
+      }
+      throw new Error(operationLabel + ': выпуск не был сохранён (в списке нет новых выпусков)')
+    })
 }
 
 // Создать новый выпуск (через IssueForm::execute, issueId отсутствует).
 export function createIssue(data) {
-  var form = issueFormFields(data || {})
-  if (data && data.datePublished) form['datePublished'] = data.datePublished
-  return callIssueComponent('future-issue-grid/update-issue', null, form)
-    .then(handleComponentResponse('Ошибка создания выпуска'))
+  var componentText = null
+  var issuesBefore = []
+  return getIssues()
+    .then(function (issues) {
+      issuesBefore = issues || []
+      return getJournalInfo()
+    })
+    .then(function (journal) {
+      var form = issueFormFields(data || {}, journal)
+      if (data && data.datePublished) form['datePublished'] = data.datePublished
+      return callIssueComponent('future-issue-grid/update-issue', null, form)
+    })
+    .then(function (response) {
+      // Сохраняем текст ответа, чтобы извлечь issueId и проверить сохранение.
+      return response.text().then(function (text) {
+        componentText = text
+        try {
+          var json = JSON.parse(text)
+          if (json && json.status === false) {
+            throw new Error('Ошибка создания выпуска: ' + ((json.content && json.content.replace(/<[^>]+>/g, ' ').trim()) || json.errorMessage || 'неизвестная ошибка'))
+          }
+          if (json && json.status === true && json.content && /pkp_form|<form[\s>]/.test(json.content)) {
+            if (formHasErrors(json.content)) {
+              console.error('[OJS] ответ формы (валидация не прошла):', json.content)
+              throw new Error('Ошибка создания выпуска: ' + (extractFormError(json.content) || 'проверьте заполнение обязательных полей'))
+            }
+          }
+        } catch (e) {
+          if (e instanceof SyntaxError) {
+            if (/pkp_form|<form[\s>]/.test(text) && formHasErrors(text)) {
+              throw new Error('Ошибка создания выпуска: ' + (extractFormError(text) || 'проверьте заполнение обязательных полей'))
+            }
+          } else {
+            throw e
+          }
+        }
+        return text
+      })
+    })
+    .then(function () {
+      return verifyIssueSaved('Ошибка создания выпуска', issuesBefore, componentText)
+    })
 }
 
 // Обновить существующий выпуск.
 export function updateIssue(id, data) {
   if (!id) return createIssue(data)
-  var form = issueFormFields(data || {})
-  if (data && data.datePublished) form['datePublished'] = data.datePublished
-  return callIssueComponent('future-issue-grid/update-issue', id, form)
-    .then(handleComponentResponse('Ошибка обновления выпуска'))
+  var componentText = null
+  var issuesBefore = []
+  return getIssues()
+    .then(function (issues) {
+      issuesBefore = issues || []
+      return getJournalInfo()
+    })
+    .then(function (journal) {
+      var form = issueFormFields(data || {}, journal)
+      if (data && data.datePublished) form['datePublished'] = data.datePublished
+      return callIssueComponent('future-issue-grid/update-issue', id, form)
+    })
+    .then(function (response) {
+      return response.text().then(function (text) {
+        componentText = text
+        try {
+          var json = JSON.parse(text)
+          if (json && json.status === false) {
+            throw new Error('Ошибка обновления выпуска: ' + ((json.content && json.content.replace(/<[^>]+>/g, ' ').trim()) || json.errorMessage || 'неизвестная ошибка'))
+          }
+          if (json && json.status === true && json.content && /pkp_form|<form[\s>]/.test(json.content)) {
+            if (formHasErrors(json.content)) {
+              console.error('[OJS] ответ формы (валидация не прошла):', json.content)
+              throw new Error('Ошибка обновления выпуска: ' + (extractFormError(json.content) || 'проверьте заполнение обязательных полей'))
+            }
+          }
+        } catch (e) {
+          if (e instanceof SyntaxError) {
+            if (/pkp_form|<form[\s>]/.test(text) && formHasErrors(text)) {
+              throw new Error('Ошибка обновления выпуска: ' + (extractFormError(text) || 'проверьте заполнение обязательных полей'))
+            }
+          } else {
+            throw e
+          }
+        }
+        return text
+      })
+    })
+    .then(function () {
+      return verifyIssueSaved('Ошибка обновления выпуска', issuesBefore, componentText)
+    })
 }
 
 // Опубликовать выпуск.
@@ -969,7 +1251,14 @@ export function unpublishIssue(id) {
 }
 
 // Удалить выпуск (IssueGridHandler::deleteIssue).
-export function deleteIssue(id) {
-  return callIssueComponent('back-issue-grid/delete-issue', id, null)
+// Выбор grid-обработчика зависит от состояния выпуска:
+//   - неопубликованный («будущий») выпуск удаляется через FutureIssueGridHandler
+//     (grid 'future-issue-grid'), как это делает штатный UI OJS;
+//   - опубликованный выпуск — через BackIssueGridHandler (grid 'back-issue-grid').
+// Использование неподходящего grid-пространства (напр. back-issue-grid для
+// будущего выпуска) приводит к 500-й ошибке на сервере.
+export function deleteIssue(id, published) {
+  var gridOp = published ? 'back-issue-grid/delete-issue' : 'future-issue-grid/delete-issue'
+  return callIssueComponent(gridOp, id, null)
     .then(handleComponentResponse('Ошибка удаления выпуска'))
 }

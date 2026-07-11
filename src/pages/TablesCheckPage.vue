@@ -504,7 +504,7 @@ export default {
       var self = this
       var idx = this.issuesWithoutJournal.indexOf(row)
       if (idx !== -1) this.issuesWithoutJournal[idx]._deleting = true
-      deleteIssue(row.id)
+      deleteIssue(row.id, row.published)
         .then(function () {
           self.$message && self.$message.success('Выпуск удалён')
           self.runCheck()
