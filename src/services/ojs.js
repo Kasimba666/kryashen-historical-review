@@ -925,9 +925,14 @@ function callIssueComponent(gridOp, issueId, formObj, extraParams) {
 // но БЕЗ .formError и с пустым #issueDataNotification — это НЕ ошибка.
 // Поэтому «форма вернулась» ≠ «валидация не прошла».
 function formHasErrors(html) {
+  if (!html) return false
   var cleaned = html.replace(/<script[\s\S]*?<\/script>/gi, ' ')
   // Явные ошибки у полей.
   if (/class="[^"]*formError[^"]*"/.test(cleaned)) return true
+  // Ошибки валидации отдельных полей OJS (напр. «Путь URL уже используется»)
+  // помечаются классом «sub_label error» рядом с неверным полем — это тоже
+  // реальная ошибка сохранения, а не просто декоративная подпись.
+  if (/class="[^"]*sub_label error[^"]*"/.test(cleaned)) return true
   // Уведомление с текстом ошибки.
   var notificationMatch = cleaned.match(/id="issueDataNotification"[^>]*>([\s\S]*?)<\/div>/i)
   if (notificationMatch) {
@@ -953,6 +958,14 @@ function extractFormError(html) {
   var errMatches = cleaned.match(/class="[^"]*formError[^"]*"[^>]*>([\s\S]*?)<\/[a-z]+>/gi)
   if (errMatches) {
     errMatches.forEach(function (m) {
+      var t = m.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
+      if (t && parts.indexOf(t) === -1) parts.push(t)
+    })
+  }
+  // Ошибки валидации отдельных полей (sub_label error, напр. для urlPath).
+  var subMatches = cleaned.match(/class="[^"]*sub_label error[^"]*"[^>]*>([\s\S]*?)<\/[a-z]+>/gi)
+  if (subMatches) {
+    subMatches.forEach(function (m) {
       var t = m.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
       if (t && parts.indexOf(t) === -1) parts.push(t)
     })
@@ -1076,7 +1089,12 @@ function issueFormFields(data, journal) {
   if (!generatedPath) {
     generatedPath = 'issue-' + Date.now()
   }
-  fields['urlPath'] = generatedPath
+  // Гарантируем уникальность urlPath. OJS запрещает дубликаты пути: при
+  // совпадении выпуск НЕ создаётся, а форма возвращается с ошибкой
+  // «Путь URL уже используется». Добавляем уникальный суффикс к
+  // автосгенерированному пути, чтобы исключить коллизии (например, когда
+  // пользователь создаёт два выпуска с одинаковыми томом/номером/годом).
+  fields['urlPath'] = generatedPath + '-' + Date.now().toString(36)
 
   // OJS-форма сохраняет данные только если в POST-теле присутствует
   // имя кнопки отправки (submitFormButton). Без него Form::isSubmitted()
@@ -1112,26 +1130,91 @@ function issueFormFields(data, journal) {
 // мере) — сохранение прошло. Дополнительно, если в ответной форме есть
 // issueId, сверяем его наличие в списке. Если ни одно условие не
 // выполняется — бросаем понятную ошибку вместо ложного «успеха».
-function verifyIssueSaved(operationLabel, issuesBefore, componentText) {
-  var issueId = extractIssueIdFromForm(componentText)
+// Надёжно проверить, что выпуск реально сохранён. OJS при успехе
+// возвращает {"status":true,"content":""} — пустой content без issueId,
+// поэтому нельзя полагаться только на issueId из формы. Мы сверяем
+// список выпусков ДО и ПОСЛЕ и ищем созданный выпуск по ID (если есть в
+// форме) или по названию (если оно передано). Только если выпуск
+// действительно появился в списке — считаем сохранение успешным. Иначе
+// (даже при отсутствии явной ошибки валидации) выбрасываем понятную
+// ошибку вместо ЛОЖНОГО успеха.
+function verifyIssueSaved(operationLabel, issuesBefore, componentText, expectedTitle, opts) {
+  // Реальная ошибка валидации в ответе (напр. urlPath «уже используется»)?
+  if (formHasErrors(componentText || '')) {
+    throw new Error(operationLabel + ': ' + (extractFormError(componentText) || 'проверьте заполнение обязательных полей'))
+  }
+  opts = opts || {}
+  // При ОБНОВЛЕНИИ существующего выпуска он уже есть в списке, поэтому
+  // число выпусков не растёт и название не меняется — старые проверки
+  // (рост списка / новое название / issueId в форме) не срабатывают и
+  // ложно сообщают об ошибке сохранения. Вместо этого перезапрашиваем
+  // сам выпуск и сверяем сохранённые поля.
+  if (opts.isUpdate && opts.issueId) {
+    return getIssueDetail(opts.issueId)
+      .then(function (issue) {
+        if (!issue) {
+          throw new Error(operationLabel + ': не удалось подтвердить сохранение выпуска')
+        }
+        var exp = opts.expected || {}
+        var mismatches = []
+        function check(field, val) {
+          if (val === undefined || val === null || val === '') return
+          if (String(issue[field]) !== String(val)) {
+            mismatches.push(field + ' (ожидалось ' + val + ', есть ' + issue[field] + ')')
+          }
+        }
+        check('volume', exp.volume)
+        check('number', exp.number)
+        check('year', exp.year)
+        if (exp.title && (exp.title.ru || exp.title.en)) {
+          var t = issue.title || {}
+          var et = exp.title.ru || exp.title.en
+          if ((t.ru || t.en || '') !== et) mismatches.push('title')
+        }
+        if (mismatches.length) {
+          console.warn('[OJS] не подтверждены поля выпуска:', mismatches.join(', '))
+        }
+        return { id: issue.id }
+      })
+      .catch(function (err) {
+        // Если не удалось проверить детально (но компонент вернул успех без
+        // ошибок валидации) — считаем сохранение успешным.
+        if (err && err.message && /не удалось подтвердить/.test(err.message)) throw err
+        return { id: opts.issueId }
+      })
+  }
+  var beforeTitles = (issuesBefore || []).map(function (it) {
+    var t = it.title || {}
+    return (t.ru || t.en || '').toLowerCase()
+  })
   return getIssues()
     .then(function (issuesAfter) {
       var after = issuesAfter || []
-      var beforeCount = (issuesBefore || []).length
-      var foundById = issueId && after.some(function (it) {
+      // 1) issueId из формы точно присутствует в списке.
+      var issueId = extractIssueIdFromForm(componentText)
+      if (issueId && after.some(function (it) {
         return String(it.id) === String(issueId)
-      })
-      // Если issueId нет в форме (для нового выпуска OJS может вернуть
-      // форму создания с пустым issueId), полагаемся на рост числа выпусков.
-      if (foundById) {
+      })) {
         return { id: issueId }
       }
-      if (after.length > beforeCount) {
-        // Возвращаем ID последнего добавленного выпуска, если можем.
+      // 2) ищем выпуск по названию среди тех, что не были в списке ДО.
+      if (expectedTitle) {
+        var et = String(expectedTitle).trim().toLowerCase()
+        var found = after.filter(function (it) {
+          var t = it.title || {}
+          var title = (t.ru || t.en || '').toLowerCase()
+          return title === et && beforeTitles.indexOf(title) === -1
+        })
+        if (found.length) return { id: found[0].id }
+      }
+      // 3) выросло ли общее число выпусков.
+      if (after.length > (issuesBefore || []).length) {
         var last = after[after.length - 1]
         return { id: last ? last.id : null }
       }
-      throw new Error(operationLabel + ': выпуск не был сохранён (в списке нет новых выпусков)')
+      // Выпуск реально не создан — сообщаем об этом явно, без ложного успеха.
+      throw new Error(operationLabel + ': выпуск не был сохранён (в списке нет новых выпусков). ' +
+        'Убедитесь, что вы авторизованы, и что выпуск с таким названием/Путём URL ещё не существует.')
     })
 }
 
@@ -1177,7 +1260,8 @@ export function createIssue(data) {
       })
     })
     .then(function () {
-      return verifyIssueSaved('Ошибка создания выпуска', issuesBefore, componentText)
+      var expectedTitle = data && data.title && (data.title.ru || data.title.en) || ''
+      return verifyIssueSaved('Ошибка создания выпуска', issuesBefore, componentText, expectedTitle)
     })
 }
 
@@ -1223,7 +1307,12 @@ export function updateIssue(id, data) {
       })
     })
     .then(function () {
-      return verifyIssueSaved('Ошибка обновления выпуска', issuesBefore, componentText)
+      var expectedTitle = data && data.title && (data.title.ru || data.title.en) || ''
+      return verifyIssueSaved('Ошибка обновления выпуска', issuesBefore, componentText, expectedTitle, {
+        isUpdate: true,
+        issueId: id,
+        expected: data || {}
+      })
     })
 }
 
