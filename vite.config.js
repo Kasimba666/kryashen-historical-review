@@ -1,4 +1,6 @@
 import { fileURLToPath, URL } from 'node:url'
+import { copyFileSync, existsSync, mkdirSync } from 'node:fs'
+import { join, dirname } from 'node:path'
 
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
@@ -73,6 +75,24 @@ function configureProxy(proxy) {
   })
 }
 
+// Плагин: после сборки копирует index.html в 404.html для поддержки SPA-роутинга на GitHub Pages
+function spaFallbackPlugin() {
+  return {
+    name: 'spa-fallback',
+    closeBundle: function () {
+      var distDir = join(process.cwd(), 'dist')
+      var src = join(distDir, 'index.html')
+      var dest = join(distDir, '404.html')
+      if (existsSync(src)) {
+        copyFileSync(src, dest)
+        console.log('[spa-fallback] Copied index.html -> 404.html')
+      } else {
+        console.warn('[spa-fallback] dist/index.html not found, skipping')
+      }
+    }
+  }
+}
+
 // https://vite.dev/config/
 export default defineConfig(({ command, mode }) => {
   // Определяем base URL в зависимости от режима
@@ -84,6 +104,7 @@ export default defineConfig(({ command, mode }) => {
     plugins: [
       vue(),
       vueDevTools(),
+      spaFallbackPlugin()
     ],
     resolve: {
       alias: {

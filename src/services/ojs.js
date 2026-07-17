@@ -3,6 +3,12 @@ import { USERS_CACHE_DURATION } from '@/config/constants'
 var OJS_BASE = import.meta.env.VITE_OJS_BASE_URL
 var API_KEY = import.meta.env.VITE_OJS_API_KEY
 
+// Если VITE_OJS_PROXY_URL указано — все запросы (в т.ч. $$$call$$$ с cookie)
+// идут через прокси. Это решает проблему SameSite-блокировки на gh-pages.
+// Прокси (Cloudflare Worker) принимает запросы с тем же origin (same-site),
+// но перенаправляет на OJS-сервер, корректно передавая cookie.
+var OJS_PROXY = import.meta.env.VITE_OJS_PROXY_URL || null
+
 // Заголовки с API-ключом (для GET-запросов)
 var authHeaders = {
   'Authorization': 'Bearer ' + API_KEY,
@@ -21,9 +27,11 @@ var jsonAuthHeaders = {
 var usersCache = null
 var usersCacheTime = 0
 
-// Определяем базовый URL для API в зависимости от окружения
-var API_BASE = OJS_BASE
-if (OJS_BASE === '/kryashen' || OJS_BASE === '/kryashen/') {
+// Определяем базовый URL для API в зависимости от окружения.
+// Если указан прокси — все запросы идут через него (он переписывает пути).
+// Для локальной разработки — через dev-прокси Vite (/kryashen).
+var API_BASE = OJS_PROXY || OJS_BASE
+if (!OJS_PROXY && (OJS_BASE === '/kryashen' || OJS_BASE === '/kryashen/')) {
   API_BASE = '/kryashen'
 }
 
@@ -1326,7 +1334,7 @@ export function updateIssue(id, data) {
 // Форма подтверждения содержит поля: issueId, confirmed=1,
 // sendIssueNotification (по умолчанию включён), csrfToken.
 export function publishIssue(id) {
-  return callIssueComponent('future-issue-grid/publish-issue', id, {
+  return callIssueComponent('future-issue-grid/publish-issue', id, null, {
     confirmed: 1,
     sendIssueNotification: 0
   })
