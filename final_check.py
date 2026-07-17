@@ -1,7 +1,0 @@
-c = open('src/pages/IssueDetailPage.vue', encoding='utf-8').read()
-print('enableContextLocale in file:', 'enableContextLocale' in c)
-print('en_US count:', c.count('en_US'))
-print("enableContextLocale('en_US'):", "enableContextLocale('en_US')" in c)
-print("enableContextLocale('en'):", "enableContextLocale('en')" in c)
-print('en count:', c.count("'en'"))
-print('ru_RU count:', c.count('ru_RU'))

@@ -1,3 +1,0 @@
-name = "kryashen-proxy"
-main = "worker-proxy.js"
-compatibility_date = "2026-07-15"
