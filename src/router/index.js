@@ -23,8 +23,10 @@ const router = createRouter({
     {
       path: '/issues/:id',
       name: 'issue-detail',
-      component: IssueDetailPage,
-      meta: { requiresAuth: true }
+      component: IssueDetailPage
+      // Просмотр выпуска и статей — ПУБЛИЧНЫЙ (без входа).
+      // Редактирование/создание/удаление ограничено правами через
+      // canManageArticles в IssueDetailPage.
     },
     {
       path: '/login',

@@ -1,14 +1,14 @@
 // Cloudflare Worker — прокси для OJS
-// Деплой: 
-//   1. Зарегистрироваться на https://cloudflare.com
-//   2. Создать Worker, вставить этот код
-//   3. Получить URL вида https://kryashen-proxy.username.workers.dev
-//   4. Указать этот URL в .env.production как VITE_OJS_PROXY_URL
+// Деплой: зайти на https://dash.cloudflare.com →
+// Workers & Pages → Create Worker → вставить этот код → Save and Deploy
 //
-// Worker принимает запросы от SPA на gh-pages, добавляет/проксирует
-// cookie и пересылает на реальный OJS-сервер tarihjournals.ru.
-// Это единственный способ обойти SameSite-ограничения браузера
-// при кросс-доменных запросах с сессионными cookie.
+// Как работает:
+// SPA на kryashen.tarihjournals.ru делает fetch-запросы к этому Worker'у
+// (указан как VITE_OJS_PROXY_URL). Worker проксирует их на реальный OJS
+// (tarihjournals.ru) с передачей cookie и добавляет правильные CORS-заголовки.
+//
+// Без Worker'а браузер блокировал бы запросы CORS-политикой, т.к.
+// kryashen.tarihjournals.ru и tarihjournals.ru — разные origin'ы.
 
 // Реальный OJS-сервер
 var OJS_ORIGIN = 'https://tarihjournals.ru'
@@ -55,14 +55,18 @@ async function handleRequest(request) {
   // Копируем ответ и добавляем CORS-заголовки
   var responseHeaders = new Headers(response.headers)
 
-  // CORS: разрешаем запросы с gh-pages
-  responseHeaders.set('Access-Control-Allow-Origin', '*')
+  // ВАЖНО: Access-Control-Allow-Origin НЕ должен быть '*' при credentials: 'include'.
+  // Вместо '*' возвращаем конкретный origin запроса (kryashen.tarihjournals.ru).
+  var requestOrigin = request.headers.get('Origin')
+  if (requestOrigin) {
+    responseHeaders.set('Access-Control-Allow-Origin', requestOrigin)
+  }
   responseHeaders.set('Access-Control-Allow-Credentials', 'true')
   responseHeaders.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
   responseHeaders.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-CSRF-Token, X-Requested-With, Accept')
 
-  // Переписываем Set-Cookie: убираем SameSite, чтобы браузер принимал cookie
-  // с любого сайта (через прокси это безопасно, т.к. запросы идут через Worker)
+  // Переписываем Set-Cookie: убираем SameSite, Secure, Domain,
+  // чтобы браузер принимал cookie (через прокси это безопасно)
   var setCookie = responseHeaders.get('Set-Cookie')
   if (setCookie) {
     setCookie = setCookie
@@ -72,7 +76,7 @@ async function handleRequest(request) {
     responseHeaders.set('Set-Cookie', setCookie)
   }
 
-  // Переписываем Location (редиректы)
+  // Переписываем Location (редиректы) — заменяем URL OJS на путь
   var location = responseHeaders.get('Location')
   if (location) {
     location = location.replace(OJS_ORIGIN + OJS_BASE, '')

@@ -97,8 +97,14 @@ function spaFallbackPlugin() {
 export default defineConfig(({ command, mode }) => {
   // Определяем base URL в зависимости от режима
   // В production (gh-pages) - используем репозиторий как базу
+  // В server (kryashen.tarihjournals.ru) - корень сайта
   // В development - корень сайта
-  var baseUrl = mode === 'production' ? '/kryashen-historical-review/' : '/'
+  var baseUrl = '/'
+  if (mode === 'production') {
+    baseUrl = '/kryashen-historical-review/'
+  } else if (mode === 'server') {
+    baseUrl = '/'
+  }
 
   return {
     plugins: [

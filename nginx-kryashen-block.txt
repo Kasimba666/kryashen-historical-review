@@ -1,0 +1,48 @@
+# ======================================================
+# ВСТАВИТЬ В FASTPANEL (Ручная настройка → Frontend)
+#
+# Замените СТАРЫЕ блоки для /kryashen/ и @ojs_kryashen на эти.
+#
+# Что исправлено (ошибка [emerg] "proxy_pass cannot have URI part
+# in ... named location"):
+#   - proxy_pass больше НЕ содержит URI-часть ("/"), поэтому он
+#     допустим внутри именованного location @ojs_kryashen.
+#   - переписание пути /kryashen -> /index.php/kryashen делается
+#     через rewrite ... break;
+#   - абсолютные редиректы OJS (https://tarihjournals.ru/index.php/kryashen/...)
+#     переписываются обратно в same-origin /kryashen/... (убирает CORS).
+# ======================================================
+
+# Приоритет над regex (^~) — чтобы статика SPA не перехватывалась
+# location ~* \.(js|css|...) ниже.
+location ^~ /kryashen/ {
+    try_files $uri $uri/ @ojs_kryashen;
+}
+
+location @ojs_kryashen {
+    # Разворачиваем внутренний путь OJS: /kryashen/x -> /index.php/kryashen/x
+    rewrite ^/kryashen/(.*)$ /index.php/kryashen/$1 break;
+
+    # БЕЗ URI-части ("/") — иначе nginx откажется сохранять конфиг
+    # внутри именованного location.
+    proxy_pass http://127.0.0.1:81;
+
+    proxy_set_header Host tarihjournals.ru;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+
+    # Cookie OJS выставляется с Path=/index.php/kryashen и
+    # Domain=tarihjournals.ru — переписываем в контекст поддомена,
+    # чтобы браузер отсылал сессию обратно на /kryashen/*.
+    proxy_cookie_path /index.php/kryashen /kryashen;
+    proxy_cookie_domain tarihjournals.ru $host;
+
+    # Редиректы OJS обратно в same-origin (устраняет CORS):
+    #   https://tarihjournals.ru/index.php/kryashen/x  -> /kryashen/x
+    #   /index.php/kryashen/x                          -> /kryashen/x
+    proxy_redirect ~^(https?://tarihjournals\.ru)?/index\.php/kryashen/(.*)$ /kryashen/$2;
+    # Если OJS редиректит на корень сайта (без /index.php/kryashen):
+    #   https://tarihjournals.ru/x -> /kryashen/x
+    proxy_redirect ~^https?://tarihjournals\.ru/(.*)$ /kryashen/$1;
+}

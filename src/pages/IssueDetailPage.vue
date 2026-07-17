@@ -423,9 +423,13 @@ export default {
       if (!this.issue) return []
       return this.issue.articles || []
     },
+    // Управление статьями (создание/редактирование/удаление/публикация
+    // выпуска) доступно ТОЛЬКО при наличии соответствующих прав:
+    // Journal Manager (16) или Editor (17). Просмотр выпуска и самих
+    // статей при этом публичный и не требует входа (см. router/index.js).
     canManageArticles: function () {
       var auth = useAuth()
-      return auth.isAdmin() || auth.hasRole(ROLES.SUBSCRIPTION_MANAGER)
+      return auth.hasRole(ROLES.JOURNAL_MANAGER) || auth.hasRole(ROLES.EDITOR)
     }
   },
   mounted() {
