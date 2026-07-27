@@ -31,19 +31,19 @@
         empty-text="Нет пользователей"
       >
         <el-table-column prop="id" label="ID" width="64" align="center" />
-        <el-table-column prop="username" label="Логин" min-width="130">
+        <el-table-column prop="username" label="Логин" width="130">
           <template #default="{ row }">
             <span class="username">{{ row.username }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="email" label="Email" min-width="200">
+        <el-table-column prop="email" label="Email" width="200" show-overflow-tooltip>
           <template #default="{ row }">
             <span class="email">{{ row.email }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="givenName" label="Имя" min-width="120" />
-        <el-table-column prop="familyName" label="Фамилия" min-width="130" />
-        <el-table-column prop="affiliation" label="Аффилиация" min-width="180" show-overflow-tooltip />
+        <el-table-column prop="givenName" label="Имя" width="120" show-overflow-tooltip />
+        <el-table-column prop="familyName" label="Фамилия" width="130" show-overflow-tooltip />
+        <el-table-column prop="affiliation" label="Аффилиация" width="180" show-overflow-tooltip />
         <el-table-column label="Статус" width="90" align="center">
           <template #default="{ row }">
             <el-tag
@@ -55,8 +55,7 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="journal" label="Журнал" min-width="180" show-overflow-tooltip />
-        <el-table-column label="Роли" min-width="180">
+        <el-table-column label="Роли" min-width="200">
           <template #default="{ row }">
             <div class="roles-list">
               <el-tag

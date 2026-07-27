@@ -23,14 +23,18 @@
                   <el-icon :size="14"><Collection /></el-icon>
                   <span>Выпуски</span>
                 </el-menu-item>
-                <el-sub-menu v-if="isSiteAdmin" index="management">
+                <el-sub-menu v-if="isSiteAdmin || canManageUsers" index="management">
                   <template #title>
                     <el-icon :size="14"><Setting /></el-icon>
                     <span>Управление</span>
                   </template>
-                  <el-menu-item index="/tables-check">
+                  <el-menu-item v-if="isSiteAdmin" index="/tables-check">
                     <el-icon :size="14"><Document /></el-icon>
                     <span>Проверка таблиц</span>
+                  </el-menu-item>
+                  <el-menu-item v-if="canManageUsers" index="/users">
+                    <el-icon :size="14"><UserFilled /></el-icon>
+                    <span>Пользователи</span>
                   </el-menu-item>
                 </el-sub-menu>
               </el-menu>
@@ -50,10 +54,6 @@
                         <span class="dropdown-username">{{ username }}</span>
                         <span class="dropdown-roles">{{ roleNames }}</span>
                       </div>
-                    </el-dropdown-item>
-                    <el-dropdown-item v-if="canManageUsers" command="users">
-                      <el-icon :size="14"><Setting /></el-icon>
-                      Пользователи
                     </el-dropdown-item>
                     <el-dropdown-item divided command="logout">
                       <el-icon :size="14"><SwitchButton /></el-icon>
@@ -85,7 +85,7 @@
           </div>
         </div>
       </el-header>
-      <el-main class="app-main">
+      <el-main :class="['app-main', { 'app-main--wide': isWidePage }]">
         <router-view />
       </el-main>
     </el-container>
@@ -126,6 +126,9 @@ export default {
   computed: {
     currentRoute: function () {
       return this.$route.path
+    },
+    isWidePage: function () {
+      return this.$route.path === '/users'
     }
   },
   mounted() {
@@ -314,6 +317,10 @@ export default {
   margin: 0 auto;
   padding: 20px;
   width: 100%;
+
+  &.app-main--wide {
+    max-width: 100%;
+  }
 }
 
 .dropdown-user-info {
