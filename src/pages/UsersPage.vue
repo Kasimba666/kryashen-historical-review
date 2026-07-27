@@ -1,92 +1,144 @@
 <template>
   <div class="users-page">
-    <div class="page-header">
-      <h1 class="page-title">Управление пользователями</h1>
+    <!-- Search & Actions Bar -->
+    <div class="toolbar">
+      <div class="toolbar-left">
+        <el-input
+          v-model="searchQuery"
+          placeholder="Поиск по имени, email или логину..."
+          :prefix-icon="Search"
+          clearable
+          class="search-input"
+          @input="handleSearch"
+          @clear="handleSearch"
+        />
+      </div>
+      <div class="toolbar-right">
+        <el-button type="primary" :icon="Plus" @click="showAddDialog">
+          Добавить пользователя
+        </el-button>
+      </div>
     </div>
 
-    <el-alert
-      title="Данные пользователей и роли управляются в админке OJS. Здесь можно только просматривать пользователей и назначать им дополнительные роли."
-      type="info"
-      :closable="false"
-      show-icon
-      style="margin-bottom: 16px;"
-    />
-
-    <el-skeleton :loading="loading" animated :count="5">
-      <template #default>
-        <el-table :data="users" stripe style="width: 100%">
-          <el-table-column prop="userName" label="Имя пользователя" min-width="150" />
-          <el-table-column prop="email" label="Email" min-width="200" />
-          <el-table-column label="Фамилия" min-width="120">
-            <template #default="scope">
-              {{ getFieldName(scope.row.familyName) }}
-            </template>
-          </el-table-column>
-          <el-table-column label="Имя" min-width="120">
-            <template #default="scope">
-              {{ getFieldName(scope.row.givenName) }}
-            </template>
-          </el-table-column>
-          <el-table-column label="Роли" min-width="220">
-            <template #default="scope">
-              <el-tag 
-                v-for="role in getUserRoles(scope.row)" 
-                :key="role.roleId"
-                size="small" 
-                :type="getRoleTagType(role.roleId)"
-                style="margin-right: 4px; margin-bottom: 4px;"
-              >
-                {{ getRoleName(role.roleId) }}
-              </el-tag>
-              <span v-if="getUserRoles(scope.row).length === 0" class="no-roles">Нет ролей</span>
-            </template>
-          </el-table-column>
-          <el-table-column label="Действия" width="120">
-            <template #default="scope">
-              <el-button 
+    <!-- Users Table -->
+    <el-card class="table-card">
+      <el-table
+        :data="users"
+        v-loading="loading"
+        stripe
+        highlight-current-row
+        @row-click="handleRowClick"
+        empty-text="Нет пользователей"
+      >
+        <el-table-column prop="id" label="ID" width="64" align="center" />
+        <el-table-column prop="username" label="Логин" min-width="130">
+          <template #default="{ row }">
+            <span class="username">{{ row.username }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="email" label="Email" min-width="200">
+          <template #default="{ row }">
+            <span class="email">{{ row.email }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="givenName" label="Имя" min-width="120" />
+        <el-table-column prop="familyName" label="Фамилия" min-width="130" />
+        <el-table-column prop="affiliation" label="Аффилиация" min-width="180" show-overflow-tooltip />
+        <el-table-column label="Статус" width="90" align="center">
+          <template #default="{ row }">
+            <el-tag
+              :type="row.enabled ? 'success' : 'danger'"
+              :effect="row.enabled ? 'light' : 'plain'"
+              size="small"
+            >
+              {{ row.enabled ? 'Активен' : 'Блок.' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="journal" label="Журнал" min-width="180" show-overflow-tooltip />
+        <el-table-column label="Роли" min-width="180">
+          <template #default="{ row }">
+            <div class="roles-list">
+              <el-tag
+                v-for="role in row.roles"
+                :key="role"
+                :type="getRoleType(role)"
                 size="small"
-                @click="openAddRoleDialog(scope.row)"
-                :disabled="scope.row.userName === 'ojs'"
-                :title="scope.row.userName === 'ojs' ? 'Пользователю ojs нельзя назначать роли' : 'Назначить роль'"
+                effect="plain"
               >
-                <el-icon><Plus /></el-icon>
-              </el-button>
-            </template>
-          </el-table-column>
-        </el-table>
-      </template>
-    </el-skeleton>
+                {{ role }}
+              </el-tag>
+              <span v-if="!row.roles || row.roles.length === 0" class="no-roles">Нет ролей</span>
+            </div>
+          </template>
+        </el-table-column>
+        <el-table-column label="Действия" width="120" fixed="right" align="center">
+          <template #default="{ row }">
+            <el-button size="small" :icon="Edit" circle @click.stop="handleEdit(row)" />
+            <el-button size="small" type="danger" :icon="Delete" circle @click.stop="handleDelete(row)" />
+          </template>
+        </el-table-column>
+      </el-table>
 
-    <!-- Диалог назначения роли -->
-    <el-dialog v-model="dialogVisible" title="Назначить роль" width="400px">
-      <el-form label-width="100px">
-        <el-form-item label="Пользователь">
-          <span class="dialog-user-name">{{ dialogUser?.userName || dialogUser?.email }}</span>
+      <!-- Pagination -->
+      <div class="pagination-bar" v-if="totalItems > 0">
+        <el-pagination
+          v-model:page-size="pageSize"
+          :current-page="currentPage"
+          :total="totalItems"
+          :page-sizes="[10, 20, 50, 100]"
+          layout="total, sizes, prev, pager, next"
+          background
+          size="small"
+          @current-change="handlePageChange"
+          @size-change="handleSizeChange"
+        />
+      </div>
+    </el-card>
+
+    <!-- Add/Edit Dialog -->
+    <el-dialog v-model="dialogVisible" :title="dialogTitle" width="480px" destroy-on-close>
+      <el-form :model="form" :rules="rules" ref="userFormRef" label-position="top" size="small">
+        <el-row :gutter="12">
+          <el-col :span="12">
+            <el-form-item label="Логин" prop="username">
+              <el-input v-model="form.username" placeholder="Введите логин" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="Email" prop="email">
+              <el-input v-model="form.email" placeholder="user@example.com" />
+            </el-form-item>
+          </el-col>
+        </el-row>
+        <el-row :gutter="12">
+          <el-col :span="12">
+            <el-form-item label="Имя" prop="givenName">
+              <el-input v-model="form.givenName" placeholder="Введите имя" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="Фамилия" prop="familyName">
+              <el-input v-model="form.familyName" placeholder="Введите фамилию" />
+            </el-form-item>
+          </el-col>
+        </el-row>
+        <el-form-item :label="form.id ? 'Пароль (оставьте пустым, чтобы не менять)' : 'Пароль'" prop="password">
+          <el-input v-model="form.password" type="password" show-password :placeholder="form.id ? 'Новый пароль' : 'Введите пароль'" />
         </el-form-item>
-        <el-form-item label="Роль">
-          <el-select v-model="selectedRoleId" placeholder="Выберите роль" style="width: 100%;">
-            <el-option 
-              v-for="role in availableRolesForUser" 
-              :key="role.id" 
-              :label="role.label" 
-              :value="role.id"
-            />
+        <el-form-item label="Аффилиация" prop="affiliation">
+          <el-input v-model="form.affiliation" placeholder="Организация / учреждение" />
+        </el-form-item>
+        <el-form-item label="Роли" prop="userGroupIds">
+          <el-select v-model="form.userGroupIds" multiple style="width: 100%;" placeholder="Выберите роли">
+            <el-option v-for="(name, id) in availableRoles" :key="id" :label="name" :value="parseInt(id)" />
           </el-select>
-          <div v-if="availableRolesForUser.length === 0" class="no-available-roles">
-            Пользователь уже имеет все доступные роли
-          </div>
         </el-form-item>
       </el-form>
-      
       <template #footer>
         <el-button @click="dialogVisible = false">Отмена</el-button>
-        <el-button 
-          type="primary" 
-          @click="assignRole"
-          :disabled="!selectedRoleId || assigning"
-          :loading="assigning"
-        >
-          Назначить
+        <el-button type="primary" :loading="saving" @click="handleSubmit">
+          {{ form.id ? 'Сохранить' : 'Создать' }}
         </el-button>
       </template>
     </el-dialog>
@@ -94,168 +146,301 @@
 </template>
 
 <script>
-import { Plus } from '@element-plus/icons-vue'
-import { getUsers, addUserToGroup, getContexts } from '@/services/ojs'
-import { useAuth } from '@/composables/useAuth'
+import { markRaw } from 'vue'
+import { Search, Plus, Edit, Delete } from '@element-plus/icons-vue'
+import { ojsApi } from '@/services/ojs'
 
-// Все доступные роли (только те, что знает наша система)
-var KNOWN_ROLE_IDS = [16, 17, 4096, 65536, 1048576]
-
-var ROLE_NAMES = {
-  16: 'Journal Manager',
-  17: 'Editor',
-  4096: 'Reviewer',
-  65536: 'Author',
-  1048576: 'Reader'
+var ROLE_TYPES = {
+  'Администратор': 'danger',
+  'Главный редактор': 'warning',
+  'Управляющий журналом': 'warning',
+  'Менеджер': 'warning',
+  'Редактор': 'primary',
+  'Редактор журнала': 'primary',
+  'Рецензент': 'info',
+  'Автор': 'success',
+  'Секретарь': null
 }
-
-var ROLE_LABELS = {
-  16: 'Journal Manager (админ)',
-  17: 'Editor (редактор)',
-  4096: 'Reviewer (рецензент)',
-  65536: 'Author (автор)',
-  1048576: 'Reader (читатель)'
-}
-
-var ALL_ROLES = [
-  { id: 16, label: ROLE_LABELS[16] },
-  { id: 17, label: ROLE_LABELS[17] },
-  { id: 4096, label: ROLE_LABELS[4096] },
-  { id: 65536, label: ROLE_LABELS[65536] },
-  { id: 1048576, label: ROLE_LABELS[1048576] }
-]
-
-// ID контекста журнала (загружается динамически)
-var CONTEXT_ID = null
 
 export default {
   name: 'UsersPage',
-  components: {
-    Plus
-  },
   data() {
     return {
+      Search: markRaw(Search),
+      Plus: markRaw(Plus),
+      Edit: markRaw(Edit),
+      Delete: markRaw(Delete),
       users: [],
       loading: false,
+      saving: false,
+      searchQuery: '',
+      currentPage: 1,
+      pageSize: 20,
+      totalItems: 0,
       dialogVisible: false,
-      dialogUser: null,
-      selectedRoleId: null,
-      assigning: false
+      dialogTitle: '',
+      userGroupsMap: {},
+      form: {
+        id: null,
+        username: '',
+        email: '',
+        givenName: '',
+        familyName: '',
+        password: '',
+        affiliation: '',
+        userGroupIds: []
+      },
+      rules: {
+        username: [{ required: true, message: 'Введите логин', trigger: 'blur' }],
+        email: [
+          { required: true, message: 'Введите email', trigger: 'blur' },
+          { type: 'email', message: 'Некорректный email', trigger: 'blur' }
+        ],
+        givenName: [{ required: true, message: 'Введите имя', trigger: 'blur' }],
+        familyName: [{ required: true, message: 'Введите фамилию', trigger: 'blur' }],
+        password: []
+      },
+      searchTimer: null
     }
   },
   computed: {
-    // Доступные роли для выбранного пользователя (те, которых у него ещё нет)
-    availableRolesForUser: function () {
-      if (!this.dialogUser || !this.dialogUser.groups) return ALL_ROLES
-      // Учитываем только известные роли для определения доступных
-      var existingRoleIds = []
-      this.dialogUser.groups.forEach(function (g) {
-        if (KNOWN_ROLE_IDS.indexOf(g.roleId) !== -1 && existingRoleIds.indexOf(g.roleId) === -1) {
-          existingRoleIds.push(g.roleId)
-        }
-      })
-      return ALL_ROLES.filter(function (r) {
-        return existingRoleIds.indexOf(r.id) === -1
-      })
+    availableRoles: function () {
+      if (Object.keys(this.userGroupsMap).length > 0) {
+        return Object.assign({}, this.userGroupsMap)
+      }
+      return { 25: 'Автор', 26: 'Рецензент', 16: 'Редактор', 1: 'Администратор', 17: 'Главный редактор', 27: 'Секретарь' }
     }
   },
   mounted() {
-    this.loadContextId()
-    this.loadUsers()
+    this.loadUserGroupsMap().finally(function () {
+      this.loadUsers()
+    }.bind(this))
   },
   methods: {
-    loadUsers() {
+    extractAffiliation: function (affiliation) {
+      if (!affiliation) return ''
+      if (typeof affiliation === 'string') return affiliation
+      if (typeof affiliation === 'object') {
+        return affiliation.ru || affiliation.en || ''
+      }
+      return ''
+    },
+
+    extractMultilingual: function (field) {
+      if (!field) return ''
+      if (typeof field === 'string') return field
+      if (typeof field === 'object') {
+        return field.ru || field.en || field[Object.keys(field)[0]] || ''
+      }
+      return ''
+    },
+
+    loadUserGroupsMap: function () {
+      return ojsApi.getUserGroupsMap()
+        .then(function (map) {
+          this.userGroupsMap = map || {}
+        }.bind(this))
+        .catch(function (error) {
+          console.warn('Не удалось загрузить справочник групп пользователей:', error.message)
+          this.userGroupsMap = {
+            25: 'Автор',
+            26: 'Рецензент',
+            16: 'Редактор',
+            17: 'Главный редактор',
+            1: 'Администратор',
+            27: 'Секретарь'
+          }
+        }.bind(this))
+    },
+
+    getRoleNameById: function (groupId) {
+      var numId = typeof groupId === 'string' ? parseInt(groupId, 10) : groupId
+      return this.userGroupsMap[numId] || ('Группа ' + groupId)
+    },
+
+    getUserRoles: function (userGroupIds) {
+      var ids = Array.isArray(userGroupIds) ? userGroupIds : []
+      return ids.map(function (id) {
+        return this.getRoleNameById(id)
+      }.bind(this))
+    },
+
+    getRoleType: function (role) {
+      return ROLE_TYPES[role] || null
+    },
+
+    loadUsers: function () {
       this.loading = true
-      getUsers()
-        .then(function(data) {
-          this.users = data
+      var offset = (this.currentPage - 1) * this.pageSize
+      ojsApi.getUsersDirect({
+        count: this.pageSize,
+        offset: offset,
+        search: this.searchQuery || undefined
+      })
+        .then(function (response) {
+          var items = Array.isArray(response && response.items) ? response.items : []
+          this.totalItems = (response && (response.totalItems || response.total || response.itemsMax)) || items.length
+
+          this.users = items.map(function (u) {
+            var userGroupIds = []
+            var roles = []
+
+            if (Array.isArray(u.groups) && u.groups.length > 0) {
+              userGroupIds = u.groups.map(function (g) { return g.id })
+              roles = u.groups.map(function (g) {
+                if (typeof g.name === 'object') {
+                  return g.name.ru || g.name.en || g.name[Object.keys(g.name)[0]] || ''
+                }
+                return g.name || ''
+              }).filter(Boolean)
+            } else if (Array.isArray(u.userGroupIds) && u.userGroupIds.length > 0) {
+              userGroupIds = u.userGroupIds
+              roles = this.getUserRoles(userGroupIds)
+            } else if (Array.isArray(u.roles) && u.roles.length > 0) {
+              roles = u.roles.map(function (r) {
+                return typeof r === 'string' ? r : (r && (r.name || r.role) || '')
+              }).filter(Boolean)
+            }
+
+            var contexts = u.contexts
+            return {
+              id: u.id,
+              username: u.username || u.userName || '',
+              email: u.email || '',
+              givenName: this.extractMultilingual(u.givenName),
+              familyName: this.extractMultilingual(u.familyName),
+              affiliation: this.extractAffiliation(u.affiliation),
+              enabled: u.disabled === undefined ? (u.enabled !== false) : !u.disabled,
+              journal: (contexts && contexts[0] && contexts[0].title) || u.journal || '',
+              roles: roles,
+              userGroupIds: userGroupIds
+            }
+          }.bind(this))
         }.bind(this))
-        .catch(function(error) {
-          this.$message && this.$message.error('Не удалось загрузить пользователей')
+        .catch(function (error) {
+          this.$message.error(error.message || 'Ошибка загрузки пользователей')
         }.bind(this))
-        .finally(function() {
+        .finally(function () {
           this.loading = false
         }.bind(this))
     },
-    
-    getFieldName(field) {
-      if (!field) return ' '
-      if (typeof field === 'string') return field
-      if (typeof field === 'object') {
-        return field.en || field.ru || field.default || Object.values(field)[0] || ' '
+
+    handleSearch: function () {
+      if (this.searchTimer) clearTimeout(this.searchTimer)
+      this.searchTimer = setTimeout(function () {
+        this.currentPage = 1
+        this.loadUsers()
+      }.bind(this), 300)
+    },
+
+    handlePageChange: function (page) {
+      this.currentPage = page
+      this.loadUsers()
+    },
+
+    handleSizeChange: function (size) {
+      this.pageSize = size
+      this.currentPage = 1
+      this.loadUsers()
+    },
+
+    showAddDialog: function () {
+      this.dialogTitle = 'Добавить пользователя'
+      this.form = {
+        id: null,
+        username: '',
+        email: '',
+        givenName: '',
+        familyName: '',
+        password: '',
+        affiliation: '',
+        userGroupIds: [25]
       }
-      return ' '
-    },
-    
-    getUserRoles(user) {
-      if (!user.groups || user.groups.length === 0) return []
-      // Дедуплицируем по roleId и отфильтровываем неизвестные роли
-      var seen = {}
-      return user.groups
-        .filter(function(group) {
-          // Пропускаем только известные роли
-          return KNOWN_ROLE_IDS.indexOf(group.roleId) !== -1
-        })
-        .filter(function(group) {
-          // Дедупликация по roleId
-          if (seen[group.roleId]) return false
-          seen[group.roleId] = true
-          return true
-        })
-        .map(function(group) {
-          return { roleId: group.roleId, groupId: group.id }
-        })
-    },
-    
-    getRoleName(roleId) {
-      return ROLE_NAMES[roleId] || 'Unknown'
-    },
-    
-    getRoleTagType(roleId) {
-      if (roleId === 16) return 'danger'
-      if (roleId === 17) return 'warning'
-      if (roleId === 4096) return 'info'
-      return 'success'
-    },
-    
-    loadContextId() {
-      getContexts()
-        .then(function(data) {
-          var items = data.items || data
-          if (items && items.length > 0) {
-            CONTEXT_ID = items[0].id
-          }
-        }.bind(this))
-        .catch(function(error) {
-        })
-    },
-    
-    openAddRoleDialog(user) {
-      this.dialogUser = user
-      this.selectedRoleId = null
       this.dialogVisible = true
     },
-    
-    assignRole() {
-      if (!this.selectedRoleId || !this.dialogUser || !CONTEXT_ID) return
-      
-      this.assigning = true
-      var self = this
-      
-      addUserToGroup(this.dialogUser.id, CONTEXT_ID, this.selectedRoleId)
-        .then(function() {
-          self.$message && self.$message.success('Роль назначена')
-          self.dialogVisible = false
-          self.selectedRoleId = null
-          self.dialogUser = null
-          self.loadUsers()
+
+    handleEdit: function (row) {
+      this.dialogTitle = 'Редактировать пользователя'
+      this.form = {
+        id: row.id,
+        username: row.username,
+        email: row.email,
+        givenName: row.givenName,
+        familyName: row.familyName,
+        password: '',
+        affiliation: this.extractAffiliation(row.affiliation),
+        userGroupIds: Array.isArray(row.userGroupIds) ? row.userGroupIds.slice() : []
+      }
+      this.dialogVisible = true
+    },
+
+    handleDelete: function (row) {
+      this.$confirm('Вы уверены, что хотите удалить пользователя?', 'Подтверждение', {
+        confirmButtonText: 'Удалить',
+        cancelButtonText: 'Отмена',
+        type: 'warning'
+      })
+        .then(function () {
+          return ojsApi.deleteUser(row.id)
         })
-        .catch(function(error) {
-          self.$message && self.$message.error(error.message)
+        .then(function () {
+          this.$message.success('Пользователь удалён')
+          this.loadUsers()
+        }.bind(this))
+        .catch(function (error) {
+          if (error !== 'cancel') {
+            this.$message.error(error.message || 'Ошибка удаления пользователя')
+          }
+        }.bind(this))
+    },
+
+    handleSubmit: function () {
+      if (!this.form.id && !this.form.password) {
+        this.$message.error('Введите пароль')
+        return
+      }
+      this.$refs.userFormRef.validate(function (valid) {
+        if (!valid) return
+        this.saving = true
+        var data = Object.assign({}, this.form)
+        var isEdit = !!data.id
+        if (isEdit && !data.password) {
+          delete data.password
+        }
+        var formId = data.id
+        delete data.id
+
+        var fields = ['givenName', 'familyName']
+        fields.forEach(function (field) {
+          if (typeof data[field] === 'string') {
+            data[field] = { ru: data[field], en: '' }
+          }
         })
-        .finally(function() {
-          self.assigning = false
-        })
+        if (typeof data.affiliation === 'string') {
+          data.affiliation = { ru: data.affiliation, en: '' }
+        }
+
+        var promise = isEdit
+          ? ojsApi.updateUser(formId, data)
+          : ojsApi.createUser(data)
+
+        promise
+          .then(function () {
+            this.$message.success('Пользователь сохранён')
+            this.dialogVisible = false
+            this.loadUsers()
+          }.bind(this))
+          .catch(function (error) {
+            this.$message.error(error.message || 'Ошибка сохранения')
+          }.bind(this))
+          .finally(function () {
+            this.saving = false
+          }.bind(this))
+      }.bind(this))
+    },
+
+    handleRowClick: function (row) {
+      this.handleEdit(row)
     }
   }
 }
@@ -263,37 +448,67 @@ export default {
 
 <style scoped lang="scss">
 .users-page {
-  width: 100%;
-  padding: 0 16px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xl);
 }
 
-.page-header {
+.toolbar {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 20px;
+  gap: var(--space-xl);
+  flex-wrap: wrap;
+
+  .toolbar-left {
+    flex: 1;
+    min-width: 240px;
+    max-width: 400px;
+  }
+
+  .toolbar-right {
+    display: flex;
+    gap: var(--space-sm);
+  }
 }
 
-.page-title {
-  font-size: 1.5rem;
+.search-input {
+  :deep(.el-input__wrapper) {
+    border-radius: var(--radius-base) !important;
+  }
+}
+
+.table-card {
+  :deep(.el-card__body) {
+    padding: 0 !important;
+  }
+}
+
+.username {
   font-weight: 600;
-  margin: 0;
+  color: var(--color-text-primary);
+}
+
+.email {
+  color: var(--color-text-secondary);
+}
+
+.roles-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
 }
 
 .no-roles {
-  font-size: 0.85rem;
-  color: var(--el-text-color-placeholder);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
   font-style: italic;
 }
 
-.dialog-user-name {
-  font-weight: 600;
-  color: var(--el-text-color-primary);
-}
-
-.no-available-roles {
-  font-size: 0.85rem;
-  color: var(--el-text-color-secondary);
-  margin-top: 4px;
+.pagination-bar {
+  display: flex;
+  justify-content: flex-end;
+  padding: var(--space-md) var(--space-lg);
+  border-top: 1px solid var(--color-border-light);
 }
 </style>

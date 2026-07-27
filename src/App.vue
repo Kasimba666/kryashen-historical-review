@@ -93,7 +93,7 @@
 </template>
 
 <script>
-import { Reading, Moon, Sunny, User, UserFilled, SwitchButton, ArrowDown, Setting, InfoFilled, Collection } from '@element-plus/icons-vue'
+import { Reading, Moon, Sunny, User, UserFilled, SwitchButton, ArrowDown, Setting, InfoFilled, Collection, Document } from '@element-plus/icons-vue'
 import { useTheme } from '@/composables/useTheme'
 import { useAuth } from '@/composables/useAuth'
 
@@ -109,7 +109,8 @@ export default {
     ArrowDown,
     Setting,
     InfoFilled,
-    Collection
+    Collection,
+    Document
   },
   data() {
     return {
