@@ -5,7 +5,7 @@
         <div class="header-content">
           <div class="header-left">
             <router-link to="/" class="header-logo">
-              <el-icon :size="20"><Reading /></el-icon>
+              <el-icon :size="20"><Notebook /></el-icon>
               <span>Кряшенское историческое обозрение</span>
             </router-link>
               <el-menu
@@ -93,14 +93,14 @@
 </template>
 
 <script>
-import { Reading, Moon, Sunny, User, UserFilled, SwitchButton, ArrowDown, Setting, InfoFilled, Collection, Document } from '@element-plus/icons-vue'
+import { Notebook, Moon, Sunny, User, UserFilled, SwitchButton, ArrowDown, Setting, InfoFilled, Collection, Document } from '@element-plus/icons-vue'
 import { useTheme } from '@/composables/useTheme'
 import { useAuth } from '@/composables/useAuth'
 
 export default {
   name: 'App',
   components: {
-    Reading,
+    Notebook,
     Moon,
     Sunny,
     User,
