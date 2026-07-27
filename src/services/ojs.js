@@ -1,4 +1,5 @@
-﻿import { USERS_CACHE_DURATION } from '@/config/constants'
+import { USERS_CACHE_DURATION, DEFAULT_GENRE_ID } from '@/config/constants'
+
 
 var OJS_BASE = import.meta.env.VITE_OJS_BASE_URL
 var API_KEY = import.meta.env.VITE_OJS_API_KEY
@@ -342,9 +343,35 @@ export function getSubmissionDetail(id) {
   return fetchThroughProxy(API_BASE + '/api/v1/submissions/' + id, { headers: authHeaders })
     .then(function (response) {
       if (!response.ok) {
-        throw new Error('╨Ю╤И╨╕╨▒╨║╨░ ╨┐╨╛╨╗╤Г╤З╨╡╨╜╨╕╤П ╨┤╨╡╤В╨░╨╗╨╡╨╣ submission (╤Б╤В╨░╤В╤Г╤Б: ' + response.status + ')')
+        throw new Error('Ошибка получения деталей submission (статус: ' + response.status + ')')
       }
       return response.json()
+    })
+}
+
+// Перевести submission в стадию production (production stage).
+// Используется после создания submission и перед каталогизацией
+// (catalogSubmission), чтобы статья прошла в производственный этап.
+// Ошибка не критична — вызывающий код (IssueDetailPage) перехватывает
+// исключения и продолжает без перевода в production.
+export function submitToProduction(submissionId) {
+  return fetchThroughProxy(API_BASE + '/api/v1/submissions/' + submissionId + '/stage', {
+    method: 'POST',
+    headers: jsonAuthHeaders,
+    body: JSON.stringify({ stage: 'production' })
+  })
+    .then(function (response) {
+      if (!response.ok) {
+        return response.text().then(function (text) {
+          var errMsg = 'Ошибка перевода submission в production (статус: ' + response.status + ')'
+          try {
+            var err = JSON.parse(text)
+            if (err.errorMessage) errMsg = err.errorMessage
+          } catch (e) {}
+          throw new Error(errMsg)
+        })
+      }
+      try { return response.json() } catch (e) { return {} }
     })
 }
 
@@ -609,13 +636,27 @@ export function updatePublication(submissionId, publicationId, data) {
 }
 
 // ╨Ч╨░╨│╤А╤Г╨╖╨║╨░ ╤Д╨░╨╣╨╗╨░ ╨▓ submission
-export function uploadSubmissionFile(submissionId, file, locale) {
+var SUBMISSION_FILE_PRODUCTION_READY = 10
+// ID жанра (genre) файла. OJS требует обязательное поле genreId при загрузке
+// файла через REST API (/api/v1/submissions/{id}/files) — без него сервер
+// вместо корректной валидационной ошибки нередко отдаёт 500 (незапланированное
+// исключение). Список жанров и жанр по умолчанию (genre_id = 1, "Текст
+// статьи" / entry_key SUBMISSION) зафиксированы в src/config/constants.js
+// на основе реального дампа таблиц genres/genre_settings для context_id=1.
+
+export function uploadSubmissionFile(submissionId, file, locale, genreId) {
+
   var formData = new FormData()
   formData.append('file', file)
-  formData.append('locale', locale || 'ru')
-  formData.append('stage', 'submission')
+  // OJS ожидает локализованное поле name как объект (name[locale]),
+  // простая строка 'name' приводит к 500 ("Cannot access offset of type string on string").
+  formData.append('name[' + (locale || 'ru') + ']', file.name || 'article.pdf')
+  formData.append('fileStage', String(SUBMISSION_FILE_PRODUCTION_READY))
+  formData.append('genreId', String(genreId || DEFAULT_GENRE_ID))
+
 
   return fetchThroughProxy(API_BASE + '/api/v1/submissions/' + submissionId + '/files', {
+
     method: 'POST',
     headers: authHeaders,
     body: formData
@@ -623,84 +664,90 @@ export function uploadSubmissionFile(submissionId, file, locale) {
     .then(function (response) {
       return response.text().then(function (text) {
         if (!response.ok) {
-          var errMsg = '╨Ю╤И╨╕╨▒╨║╨░ ╨╖╨░╨│╤А╤Г╨╖╨║╨╕ ╤Д╨░╨╣╨╗╨░ (╤Б╤В╨░╤В╤Г╤Б: ' + response.status + ')'
+          var errMsg = 'Ошибка загрузки файла (статус: ' + response.status + ')'
           try {
             var err = JSON.parse(text)
             if (err.errorMessage) errMsg = err.errorMessage
           } catch (e) {}
+          if (response.status === 500) {
+            errMsg += '. Возможно, не найден обязательный жанр файла (genreId) — проверьте настройки жанров в OJS.'
+          }
           throw new Error(errMsg)
         }
         try { return JSON.parse(text) } catch (e) { return {} }
       })
     })
 }
+
 
 // ╨б╨╛╨╖╨┤╨░╨╜╨╕╨╡ galley (╨┐╤А╨╡╨┤╤Б╤В╨░╨▓╨╗╨╡╨╜╨╕╤П ╤Д╨░╨╣╨╗╨░) ╨┤╨╗╤П publication.
 // ╨Я╨╛╤Б╨╗╨╡ ╨╖╨░╨│╤А╤Г╨╖╨║╨╕ ╤Д╨░╨╣╨╗╨░ ╨▓ submission ╨╡╨│╨╛ ╨╜╤Г╨╢╨╜╨╛ ╨┐╤А╨╕╨║╤А╨╡╨┐╨╕╤В╤М ╨║ publication ╨║╨░╨║ galley,
 // ╨╕╨╜╨░╤З╨╡ PDF ╨╜╨╡ ╨╛╤В╨╛╨▒╤А╨░╨╢╨░╨╡╤В╤Б╤П ╨▓ ╨▓╤Л╨┐╤Г╤Б╨║╨╡.
+// Создание galley через component-grid (REST POST /galleys отсутствует в OJS 3.5).
+// Процесс: получаем форму add-galley, затем отправляем update-galley с файлом.
 export function createGalley(submissionId, publicationId, fileId, locale) {
-  return fetchThroughProxy(API_BASE + '/api/v1/submissions/' + submissionId + '/publications/' + publicationId + '/galleys', {
-    method: 'POST',
-    headers: jsonAuthHeaders,
-    body: JSON.stringify({
-      fileId: fileId,
-      label: 'PDF',
-      locale: locale || 'ru'
+  return getComponentToken().then(function (csrf) {
+    var query = 'csrfToken=' + encodeURIComponent(csrf) +
+      '&submissionId=' + encodeURIComponent(submissionId) +
+      '&publicationId=' + encodeURIComponent(publicationId)
+    var url = API_BASE + '/$$$call$$$/grid/article-galleys/article-galley-grid/add-galley?' + query
+    // Получаем форму создания галлеи
+    return fetchThroughProxy(url, {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Accept': 'application/json, text/javascript, */*; q=0.01'
+      },
+      body: 'csrfToken=' + encodeURIComponent(csrf)
     })
+      .then(function (response) { return response.text() })
+      .then(function (text) {
+        // Извлекаем CSRF из формы (если он обновился)
+        var m = text.match(/name="csrfToken"\s+value="([^"]+)"/)
+        var formCsrf = m ? m[1] : csrf
+        // Отправляем форму с данными галлеи
+        var formData = 'label=' + encodeURIComponent('PDF') +
+          '&locale=' + encodeURIComponent(locale || 'ru') +
+          '&fileId=' + encodeURIComponent(fileId) +
+          '&csrfToken=' + encodeURIComponent(formCsrf)
+        return fetchThroughProxy(
+          API_BASE + '/$$$call$$$/grid/article-galleys/article-galley-grid/update-galley?' +
+            'submissionId=' + encodeURIComponent(submissionId) +
+            '&publicationId=' + encodeURIComponent(publicationId) +
+            '&csrfToken=' + encodeURIComponent(formCsrf),
+          {
+            method: 'POST',
+            credentials: 'include',
+            headers: {
+              'Content-Type': 'application/x-www-form-urlencoded',
+              'Accept': 'application/json, text/javascript, */*; q=0.01'
+            },
+            body: formData
+          }
+        )
+      })
   })
     .then(function (response) {
       return response.text().then(function (text) {
         if (!response.ok) {
-          var errMsg = '╨Ю╤И╨╕╨▒╨║╨░ ╤Б╨╛╨╖╨┤╨░╨╜╨╕╤П galley (╤Б╤В╨░╤В╤Г╤Б: ' + response.status + ')'
+          var errMsg = 'Ошибка создания galley (статус: ' + response.status + ')'
           try {
-            var err = JSON.parse(text)
-            if (err.errorMessage) errMsg = err.errorMessage
+            var json = JSON.parse(text)
+            if (json && json.content) errMsg = json.content.replace(/<[^>]+>/g, ' ').trim()
           } catch (e) {}
           throw new Error(errMsg)
         }
-        try { return JSON.parse(text) } catch (e) { return {} }
-      })
-    })
-}
-
-// ╨Я╨╡╤А╨╡╨▓╨╛╨┤ submission ╨▓ Production stage
-export function submitToProduction(submissionId) {
-  var body = {
-    stage: 4 // WORKFLOW_STAGE_ID_PRODUCTION = 4
-  }
-  return fetchThroughProxy(API_BASE + '/api/v1/submissions/' + submissionId + '/workflow', {
-    method: 'PUT',
-    headers: jsonAuthHeaders,
-    body: JSON.stringify(body)
-  })
-    .then(function (response) {
-      return response.text().then(function (text) {
-        if (!response.ok) {
-          var errMsg = '╨Ю╤И╨╕╨▒╨║╨░ ╨┐╨╡╤А╨╡╨▓╨╛╨┤╨░ ╨▓ production (╤Б╤В╨░╤В╤Г╤Б: ' + response.status + ')'
-          try {
-            var err = JSON.parse(text)
-            if (err.errorMessage) errMsg = err.errorMessage
-          } catch (e) {}
-          throw new Error(errMsg)
+        try {
+          var json = JSON.parse(text)
+          if (json && json.status === false) {
+            throw new Error((json.content || '').replace(/<[^>]+>/g, ' ').trim() || 'Не удалось создать galley')
+          }
+          return json
+        } catch (e) {
+          if (e instanceof SyntaxError) return {}
+          throw e
         }
-        try { return JSON.parse(text) } catch (e) { return {} }
       })
-    })
-}
-
-// ╨Э╨░╨╖╨╜╨░╤З╨╡╨╜╨╕╨╡ submission ╨▓ ╨▓╤Л╨┐╤Г╤Б╨║.
-// ╨Т╨Э╨Ш╨Ь╨Р╨Э╨Ш╨Х: ╨▓ ╤В╨╡╨║╤Г╤Й╨╡╨╣ ╨▓╨╡╤А╤Б╨╕╨╕ OJS ╨Э╨Х╨в REST-╨╝╨░╤А╤И╤А╤Г╤В╨░ /issues/{id}/catalog
-// (╨▓╨╛╨╖╨▓╤А╨░╤Й╨░╨╡╤В 500 "route could not be found"). ╨Э╨░╨╖╨╜╨░╤З╨╡╨╜╨╕╨╡ ╨▓╤Л╨┐╤Г╤Б╨║╨░ ╨┤╨╡╨╗╨░╨╡╤В╤Б╤П
-// ╤З╨╡╤А╨╡╨╖ ╨┐╨╛╨╗╨╡ issueId ╨╜╨░ publication: PUT /submissions/{id}/publications/{pubId}.
-function assignPublicationToIssue(submissionId, issueId) {
-  return getSubmissionDetail(submissionId)
-    .then(function (submission) {
-      var publicationId = submission.currentPublicationId ||
-        (submission.publications && submission.publications[0] && submission.publications[0].id)
-      if (!publicationId) {
-        throw new Error('╨Э╨╡ ╨┐╨╛╨╗╤Г╤З╨╡╨╜ ID publication ╨┤╨╗╤П ╨╜╨░╨╖╨╜╨░╤З╨╡╨╜╨╕╤П ╨▓╤Л╨┐╤Г╤Б╨║╨░')
-      }
-      return updatePublication(submissionId, publicationId, { issueId: issueId })
     })
 }
 
@@ -1359,6 +1406,98 @@ export function deleteIssue(id, published) {
   return callIssueComponent(gridOp, id, null)
     .then(handleComponentResponse('Ошибка удаления выпуска'))
 }
+
+// ========================================
+// Файлы статей (galleys)
+// ========================================
+
+// Удалить galley (файл-представление) публикации.
+// Используется при замене прикреплённого файла статьи: сначала удаляем
+// старый galley, затем создаём новый через createGalley с новым fileId.
+// Удаление галлеи через legacy component-grid (т.к. REST DELETE /galleys/{id}
+// отсутствует в OJS 3.5). Использует сессию и CSRF-токен.
+export function deleteGalley(submissionId, publicationId, galleyId) {
+  return getComponentToken().then(function (csrf) {
+    var query = 'csrfToken=' + encodeURIComponent(csrf) +
+      '&submissionId=' + encodeURIComponent(submissionId) +
+      '&publicationId=' + encodeURIComponent(publicationId) +
+      '&representationId=' + encodeURIComponent(galleyId)
+    var url = API_BASE + '/$$$call$$$/grid/article-galleys/article-galley-grid/delete-galley?' + query
+    return fetchThroughProxy(url, {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Accept': 'application/json, text/javascript, */*; q=0.01'
+      },
+      body: 'csrfToken=' + encodeURIComponent(csrf)
+    })
+  })
+    .then(function (response) {
+      if (!response.ok) {
+        return response.text().then(function (text) {
+          var msg = 'Ошибка удаления файла статьи (статус: ' + response.status + ')'
+          try {
+            var json = JSON.parse(text)
+            if (json && json.content) msg = json.content.replace(/<[^>]+>/g, ' ').trim()
+          } catch (e) {}
+          throw new Error(msg)
+        })
+      }
+      return response.text().then(function (text) {
+        try {
+          var json = JSON.parse(text)
+          if (json && json.status === false) {
+            throw new Error((json.content || '').replace(/<[^>]+>/g, ' ').trim() || 'Не удалось открепить файл')
+          }
+        } catch (e) {
+          if (e instanceof SyntaxError) {
+            // Не JSON — считаем успехом
+          } else {
+            throw e
+          }
+        }
+        return true
+      })
+    })
+}
+
+// Прикрепить/заменить файл статьи: загружаем файл, при наличии старого
+// galley удаляем его, затем создаём новый galley с новым fileId.
+export function attachArticleFile(submissionId, publicationId, file, locale, existingGalleyId) {
+  return uploadSubmissionFile(submissionId, file, locale)
+    .then(function (fileResp) {
+      var fileId = fileResp.id || (fileResp.file && fileResp.file.id)
+      if (!fileId) {
+        throw new Error('Не удалось получить ID загруженного файла')
+      }
+      var removeOld = existingGalleyId
+        ? deleteGalley(submissionId, publicationId, existingGalleyId).catch(function () {})
+        : Promise.resolve()
+      return removeOld.then(function () {
+        return createGalley(submissionId, publicationId, fileId, locale)
+      })
+    })
+}
+
+// Получить первый доступный galley/файл публикации для ссылки на скачивание.
+export function getFirstGalleyUrl(submissionId, publicationId, contextUrlPath) {
+  return getPublication(submissionId, publicationId)
+    .then(function (pub) {
+      var galleys = pub && pub.galleys
+      if (!galleys || !galleys.length) return null
+      var g = galleys[0]
+      return {
+        id: g.id,
+        label: g.label || 'PDF',
+        urlRemote: g.urlRemote || null,
+        // Прямая ссылка на скачивание файла через OJS-роут article/download
+        downloadUrl: (OJS_BASE || '') + '/' + (contextUrlPath || 'ru') + '/article/view/' + submissionId + '/' + g.id
+      }
+    })
+    .catch(function () { return null })
+}
+
 
 // ========================================
 // REST API для управления пользователями

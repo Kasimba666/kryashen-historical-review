@@ -111,7 +111,7 @@
                   v-if="article.galley"
                   type="primary"
                   class="article-galley-link"
-                  :href="article.galley.urlPublished || article.galley.urlRemote"
+                  :href="getGalleyDownloadUrl(article.galley, article.id)"
                   target="_blank"
                 >
                   <el-icon><Document /></el-icon> PDF
@@ -338,6 +338,40 @@
             <el-option label="Готова к публикации" value="ready" />
           </el-select>
         </el-form-item>
+        <el-form-item label="PDF файл">
+          <div v-if="editingArticle && editingArticle.galley" class="current-file-row">
+            <el-link
+              type="primary"
+              :href="getGalleyDownloadUrl(editingArticle.galley, editingArticle.id)"
+              target="_blank"
+            >
+              <el-icon><Document /></el-icon> Текущий файл
+            </el-link>
+            <el-button
+              size="small"
+              type="danger"
+              text
+              :loading="detachingFile"
+              @click="detachCurrentFile"
+            >
+              <el-icon><Delete /></el-icon> Открепить файл
+            </el-button>
+          </div>
+
+          <el-upload
+            drag
+            action="#"
+            :auto-upload="false"
+            :on-change="handlePdfChange"
+            :file-list="pdfFileList"
+            accept=".pdf"
+          >
+            <div class="upload-content">
+              <el-icon :size="40"><Upload /></el-icon>
+              <div>{{ editingArticle && editingArticle.galley ? 'Перетащите PDF сюда, чтобы заменить файл' : 'Перетащите PDF сюда или кликните' }}</div>
+            </div>
+          </el-upload>
+        </el-form-item>
       </el-form>
 
       <template #footer>
@@ -347,12 +381,15 @@
         </el-button>
       </template>
     </el-dialog>
+
   </div>
 </template>
 
 <script>
 import { ArrowLeft, Document, Download, Plus, Edit, Delete, Upload } from '@element-plus/icons-vue'
-import { getIssueDetail, getSubmissions, addArticleToIssue, removeArticleFromIssue, createSubmission, updatePublication, uploadSubmissionFile, createGalley, submitToProduction, catalogSubmission, getSections, getCurrentContextId, getSubmissionDetail, getPublication, getContributors, createContributor, deleteContributor, enableContextLocale, publishIssue, unpublishIssue, AUTHOR_USER_GROUP_ID } from '@/services/ojs'
+import { getIssueDetail, getSubmissions, addArticleToIssue, removeArticleFromIssue, createSubmission, updatePublication, uploadSubmissionFile, createGalley, deleteGalley, attachArticleFile, submitToProduction, catalogSubmission, getSections, getCurrentContextId, getSubmissionDetail, getPublication, getContributors, createContributor, deleteContributor, enableContextLocale, publishIssue, unpublishIssue, AUTHOR_USER_GROUP_ID } from '@/services/ojs'
+
+
 import { useAuth } from '@/composables/useAuth'
 import { ROLES } from '@/config/constants'
 
@@ -402,9 +439,11 @@ export default {
       _editingPublicationId: null,
       _editingPublicationVersion: null,
       publishing: false,
-      unpublishing: false
+      unpublishing: false,
+      detachingFile: false
     }
   },
+
   computed: {
     issueTitle: function () {
       if (!this.issue) return ''
@@ -674,11 +713,22 @@ export default {
     goBack() {
       this.$router.push('/')
     },
-    openGalley(galley) {
+    getGalleyDownloadUrl(galley, submissionId) {
+      if (!galley) return null
+      if (galley.urlRemote) return galley.urlRemote
       if (galley.urlPublished) {
-        window.open(galley.urlPublished, '_blank')
-      } else if (galley.urlRemote) {
-        window.open(galley.urlRemote, '_blank')
+        // urlPublished: /article/view/{submissionId}/version/{publicationId}/{galleyId}
+        // → /article/download/{submissionId}/{galleyId} (работает для непубликованных статей)
+        return galley.urlPublished
+          .replace('/article/view/', '/article/download/')
+          .replace(/\/version\/\d+/, '')
+      }
+      return null
+    },
+    openGalley(galley) {
+      var url = this.getGalleyDownloadUrl(galley, galley.submissionId)
+      if (url) {
+        window.open(url, '_blank')
       }
     },
     openAddArticleDialog() {
@@ -737,9 +787,12 @@ export default {
         authors: [{ givenName: '', familyName: '', email: '' }],
         keywordsArr: (article.keywords || []).slice(),
         pages: article.pages || '',
-        status: article.status || 'submitted'
+        status: article.status || 'submitted',
+        pdfFile: null
       }
+      this.pdfFileList = []
       this.newKeyword = ''
+
       // Загружаем реальных контрибьютеров из БД, чтобы их можно было отредактировать
       getSubmissionDetail(article.id)
         .then(function (sub) {
@@ -849,15 +902,26 @@ export default {
             })
           })
           .then(function () {
+            if (!self.articleForm.pdfFile) return
+            var existingGalleyId = (self.editingArticle && self.editingArticle.galley && self.editingArticle.galley.id) || null
+            return attachArticleFile(submissionId, publicationId, self.articleForm.pdfFile, 'ru', existingGalleyId)
+              .catch(function (err) {
+                self.$message && self.$message.warning('Не удалось прикрепить файл: ' + (err.message || ''))
+              })
+          })
+          .then(function () {
             self.$message && self.$message.success('Изменения сохранены')
             self.editArticleDialogVisible = false
             self.editingArticle = null
             self._editingSubmissionId = null
             self._editingPublicationId = null
             self._editingPublicationVersion = null
+            self.articleForm.pdfFile = null
+            self.pdfFileList = []
             self.loadIssue()
           })
       }
+
 
       if (this._editingPublicationId) {
         return proceed(this._editingPublicationId)
@@ -885,10 +949,43 @@ export default {
           self.savingArticle = false
         })
     },
+    detachCurrentFile() {
+      if (!this.editingArticle || !this.editingArticle.galley) return
+      var self = this
+      var submissionId = this._editingSubmissionId || this.editingArticle.id
+      var publicationId = this._editingPublicationId
+      var galleyId = this.editingArticle.galley.id
+      if (!publicationId || !galleyId) return
+
+      this.$confirm
+        ? this.$confirm('Открепить файл от статьи?', 'Подтверждение', { type: 'warning' })
+            .then(function () { return self._doDetachFile(submissionId, publicationId, galleyId) })
+            .catch(function () {})
+        : this._doDetachFile(submissionId, publicationId, galleyId)
+    },
+    _doDetachFile(submissionId, publicationId, galleyId) {
+      var self = this
+      this.detachingFile = true
+      deleteGalley(submissionId, publicationId, galleyId)
+        .then(function () {
+          self.$message && self.$message.success('Файл откреплён от статьи')
+          self.editingArticle.galley = null
+          self.pdfFileList = []
+          self.articleForm.pdfFile = null
+          self.loadIssue()
+        })
+        .catch(function (error) {
+          self.$message && self.$message.error(error.message || 'Не удалось открепить файл')
+        })
+        .finally(function () {
+          self.detachingFile = false
+        })
+    },
     doPublish() {
       if (!this.issue) return
       var self = this
       this.publishing = true
+
       publishIssue(this.issue.id)
         .then(function () {
           self.$message && self.$message.success('Выпуск опубликован')
