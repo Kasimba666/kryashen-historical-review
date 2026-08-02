@@ -117,10 +117,19 @@
                   <el-icon><Document /></el-icon> PDF
                 </el-link>
               </div>
-              <div v-if="article.status" class="article-status">
-                <el-tag size="small" :type="getArticleStatusType(article.status)">
+              <div v-if="article.status || article.publicationStatus || canManageArticles" class="article-status">
+                <el-tag v-if="article.status" size="small" :type="getArticleStatusType(article.status)" style="margin-right: 6px;">
                   {{ getArticleStatusLabel(article.status) }}
                 </el-tag>
+                <el-button
+                  v-if="canManageArticles && !issue.published"
+                  size="small"
+                  text
+                  @click.stop="openStatusDialog(article)"
+                  title="Изменить статус"
+                >
+                  <el-icon><Edit /></el-icon>
+                </el-button>
               </div>
             </div>
             <div v-if="canManageArticles && !issue.published" class="article-actions" @click.stop>
@@ -330,14 +339,6 @@
         <el-form-item label="Страницы">
           <el-input v-model="articleForm.pages" placeholder="Например: 45-67" />
         </el-form-item>
-        <el-form-item label="Статус">
-          <el-select v-model="articleForm.status" style="width: 100%;">
-            <el-option label="Поступила" value="submitted" />
-            <el-option label="Рецензирована" value="reviewed" />
-            <el-option label="Редактируется" value="copyediting" />
-            <el-option label="Готова к публикации" value="ready" />
-          </el-select>
-        </el-form-item>
         <el-form-item label="PDF файл">
           <div v-if="editingArticle && editingArticle.galley" class="current-file-row">
             <el-link
@@ -382,12 +383,36 @@
       </template>
     </el-dialog>
 
+    <!-- Диалог изменения статуса статьи -->
+    <el-dialog v-model="statusDialogVisible" title="Изменить статус статьи" width="400px">
+      <p v-if="statusArticle" style="margin-bottom: 16px;">
+        <strong>{{ statusArticle.titleRu || statusArticle.titleEn || 'Статья #' + statusArticle.id }}</strong>
+      </p>
+      <el-form label-width="100px">
+        <el-form-item label="Статус OJS">
+          <el-select v-model="statusForm.ojsStatus" style="width: 100%;">
+            <el-option label="В очереди" :value="1" />
+            <el-option label="Опубликована" :value="3" />
+            <el-option label="Отклонена" :value="4" />
+            <el-option label="Запланирована" :value="5" />
+          </el-select>
+        </el-form-item>
+      </el-form>
+
+      <template #footer>
+        <el-button @click="statusDialogVisible = false">Отмена</el-button>
+        <el-button type="primary" @click="saveStatusChange" :loading="savingStatus">
+          Сохранить
+        </el-button>
+      </template>
+    </el-dialog>
+
   </div>
 </template>
 
 <script>
 import { ArrowLeft, Document, Download, Plus, Edit, Delete, Upload } from '@element-plus/icons-vue'
-import { getIssueDetail, getSubmissions, addArticleToIssue, removeArticleFromIssue, createSubmission, updatePublication, uploadSubmissionFile, createGalley, deleteGalley, attachArticleFile, submitToProduction, catalogSubmission, getSections, getCurrentContextId, getSubmissionDetail, getPublication, getContributors, createContributor, deleteContributor, enableContextLocale, publishIssue, unpublishIssue, AUTHOR_USER_GROUP_ID } from '@/services/ojs'
+import { getIssueDetail, getSubmissions, addArticleToIssue, removeArticleFromIssue, createSubmission, updatePublication, uploadSubmissionFile, createGalley, deleteGalley, attachArticleFile, submitToProduction, catalogSubmission, getSections, getCurrentContextId, getSubmissionDetail, getPublication, getContributors, createContributor, deleteContributor, enableContextLocale, publishIssue, unpublishIssue, updateArticleStatus, AUTHOR_USER_GROUP_ID } from '@/services/ojs'
 
 
 import { useAuth } from '@/composables/useAuth'
@@ -429,7 +454,10 @@ export default {
         keywordsArr: [],
         pdfFile: null,
         pages: '',
-        sectionId: null
+        sectionId: null,
+        status: 'submitted',
+        publicationStatus: null,
+        ojsStatus: null
       },
       newKeyword: '',
       pdfFileList: [],
@@ -438,9 +466,16 @@ export default {
       _editingSubmissionId: null,
       _editingPublicationId: null,
       _editingPublicationVersion: null,
+      _editingOriginalPublicationStatus: null,
       publishing: false,
       unpublishing: false,
-      detachingFile: false
+      detachingFile: false,
+      statusDialogVisible: false,
+      statusArticle: null,
+      savingStatus: false,
+      statusForm: {
+        ojsStatus: null
+      }
     }
   },
 
@@ -503,6 +538,10 @@ export default {
     },
     getArticleStatusType: function (status) {
       var types = {
+        1: 'info',      // В очереди
+        3: 'success',   // Опубликована
+        4: 'danger',    // Отклонена
+        5: 'warning',   // Запланирована
         'submitted': 'info',
         'reviewed': 'success',
         'copyediting': 'warning',
@@ -512,12 +551,34 @@ export default {
     },
     getArticleStatusLabel: function (status) {
       var labels = {
+        1: 'В очереди',
+        3: 'Опубликована',
+        4: 'Отклонена',
+        5: 'Запланирована',
         'submitted': 'Поступила',
         'reviewed': 'Рецензирована',
         'copyediting': 'Редактируется',
         'ready': 'Готова к публикации'
       }
       return labels[status] || status || 'Неизвестно'
+    },
+    getPublicationStatusType: function (status) {
+      var types = {
+        '1': 'info',
+        '2': 'success',
+        '3': 'warning',
+        '4': 'danger'
+      }
+      return types[String(status)] || 'info'
+    },
+    getPublicationStatusLabel: function (status) {
+      var labels = {
+        '1': 'В очереди',
+        '2': 'Опубликована',
+        '3': 'Запланирована',
+        '4': 'Отклонена'
+      }
+      return labels[String(status)] || status || 'Неизвестно'
     },
     getSectionTitle: function (sectionId) {
       if (!sectionId || !this.sections.length) return ''
@@ -527,6 +588,33 @@ export default {
         }
       }
       return ''
+    },
+    // Открыть диалог изменения статуса статьи.
+    openStatusDialog: function (article) {
+      this.statusArticle = article
+      this.statusForm.ojsStatus = (article.status && typeof article.status === 'number') ? article.status : 1
+      this.statusDialogVisible = true
+    },
+    // Сохранить новый статус через плагин articleManagement.
+    saveStatusChange: function () {
+      if (!this.statusArticle || !this.statusForm.ojsStatus) return
+      var self = this
+      var article = this.statusArticle
+      var newStatus = Number(this.statusForm.ojsStatus)
+      this.savingStatus = true
+      updateArticleStatus(article.id, { status: newStatus })
+        .then(function () {
+          self.$message && self.$message.success('Статус статьи обновлён')
+          article.status = newStatus
+          self.statusDialogVisible = false
+          self.statusArticle = null
+        })
+        .catch(function (error) {
+          self.$message && self.$message.error(error.message || 'Ошибка обновления статуса')
+        })
+        .finally(function () {
+          self.savingStatus = false
+        })
     },
     addAuthor: function () {
       if (!Array.isArray(this.articleForm.authors)) {
@@ -673,6 +761,7 @@ export default {
               sectionTitle: self.getSectionTitle(pub.sectionId),
               pages: sub.pages || pub.pages || '',
               status: sub.status,
+              publicationStatus: pub.status || null,
               galley: galley
             }
 
@@ -788,10 +877,14 @@ export default {
         keywordsArr: (article.keywords || []).slice(),
         pages: article.pages || '',
         status: article.status || 'submitted',
+        publicationStatus: article.publicationStatus || null,
+        ojsStatus: (article.status && typeof article.status === 'number') ? article.status : null,
         pdfFile: null
       }
       this.pdfFileList = []
       this.newKeyword = ''
+      this._editingOriginalPublicationStatus = article.publicationStatus || null
+      this._editingOriginalOjsStatus = (article.status && typeof article.status === 'number') ? article.status : null
 
       // Загружаем реальных контрибьютеров из БД, чтобы их можно было отредактировать
       getSubmissionDetail(article.id)
@@ -883,6 +976,14 @@ export default {
               return updatePublication(submissionId, publicationId, pubData)
             }
             return doUpdate().catch(function (err) {
+              if (/403/.test(String(err.message || ''))) {
+                // API-ключ не имеет прав на обновление публикации через REST API.
+                // Статус управляется отдельно через плагин articleManagement.
+                // Остальные поля (название, ключевые слова) не сохранятся,
+                // но авторы и файлы сохраняются через отдельные эндпоинты.
+                console.warn('updatePublication 403: нет прав на REST API. Статус управляется через плагин.')
+                return
+              }
               if (self.articleForm.titleEn && /400/.test(String(err.message || ''))) {
                 console.warn('Ошибка 400 при сохранении EN названия:', err.message)
                 console.warn('Тело запроса, вызвавшего 400:', JSON.stringify(pubData))

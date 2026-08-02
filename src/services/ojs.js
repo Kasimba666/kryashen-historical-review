@@ -349,6 +349,31 @@ export function getSubmissionDetail(id) {
     })
 }
 
+// Обновление статуса статьи через плагин articleManagement.
+// PUT /api/v1/article-management/submissions/{submissionId}/status
+// Body: { "status": 1 } — 1=queued, 3=published, 4=declined, 5=scheduled
+export function updateArticleStatus(submissionId, data) {
+  return fetchThroughProxy(API_BASE + '/api/v1/article-management/submissions/' + submissionId + '/status', {
+    method: 'PUT',
+    headers: jsonAuthHeaders,
+    body: JSON.stringify(data)
+  })
+    .then(function (response) {
+      return response.text().then(function (text) {
+        if (!response.ok) {
+          var errMsg = 'Ошибка обновления статуса статьи (статус: ' + response.status + ')'
+          try {
+            var err = JSON.parse(text)
+            if (err.error) errMsg = typeof err.error === 'string' ? err.error : (err.error.message || errMsg)
+            if (err.message) errMsg = err.message
+          } catch (e) {}
+          throw new Error(errMsg)
+        }
+        try { return JSON.parse(text) } catch (e) { return {} }
+      })
+    })
+}
+
 // Перевести submission в стадию production (production stage).
 // Используется после создания submission и перед каталогизацией
 // (catalogSubmission), чтобы статья прошла в производственный этап.
@@ -617,7 +642,10 @@ export function createSubmission(data) {
 export function updatePublication(submissionId, publicationId, data) {
   return fetchThroughProxy(API_BASE + '/api/v1/submissions/' + submissionId + '/publications/' + publicationId, {
     method: 'PUT',
-    headers: jsonAuthHeaders,
+    headers: {
+      'Accept': 'application/json',
+      'Content-Type': 'application/json'
+    },
     body: JSON.stringify(data)
   })
     .then(function (response) {
@@ -839,6 +867,21 @@ export function deleteContributor(submissionId, publicationId, contributorId) {
 export var AUTHOR_USER_GROUP_ID = 14
 
 // ╨б╨▓╤П╨╖╤Л╨▓╨░╨╜╨╕╨╡ submission ╤Б issue (╤З╨╡╤А╨╡╨╖ publication.issueId)
+function assignPublicationToIssue(submissionId, issueId) {
+  return getSubmissionDetail(submissionId)
+    .then(function (submission) {
+      var publicationId = submission.currentPublicationId ||
+        (submission.publications && submission.publications[0] && submission.publications[0].id)
+      if (!publicationId) {
+        throw new Error('Не получен ID publication для связывания с выпуском')
+      }
+      return updatePublication(submissionId, publicationId, {
+        issueId: issueId,
+        status: 3
+      })
+    })
+}
+
 export function catalogSubmission(issueId, submissionId) {
   return assignPublicationToIssue(submissionId, issueId)
     .then(function (data) {
@@ -1646,6 +1689,10 @@ export var ojsApi = {
       }
       return res.json()
     })
+  },
+
+  updateArticleStatus: function (submissionId, data) {
+    return updateArticleStatus(submissionId, data)
   }
 }
 
