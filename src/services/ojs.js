@@ -642,10 +642,8 @@ export function createSubmission(data) {
 export function updatePublication(submissionId, publicationId, data) {
   return fetchThroughProxy(API_BASE + '/api/v1/submissions/' + submissionId + '/publications/' + publicationId, {
     method: 'PUT',
-    headers: {
-      'Accept': 'application/json',
-      'Content-Type': 'application/json'
-    },
+    headers: jsonAuthHeaders,
+    credentials: 'omit',
     body: JSON.stringify(data)
   })
     .then(function (response) {

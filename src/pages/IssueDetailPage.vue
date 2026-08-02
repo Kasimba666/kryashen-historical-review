@@ -467,6 +467,9 @@ export default {
       _editingPublicationId: null,
       _editingPublicationVersion: null,
       _editingOriginalPublicationStatus: null,
+      _editingOriginalTitleRu: '',
+      _editingOriginalTitleEn: '',
+      _editingOriginalKeywords: [],
       publishing: false,
       unpublishing: false,
       detachingFile: false,
@@ -885,6 +888,11 @@ export default {
       this.newKeyword = ''
       this._editingOriginalPublicationStatus = article.publicationStatus || null
       this._editingOriginalOjsStatus = (article.status && typeof article.status === 'number') ? article.status : null
+      // Сохраняем исходные значения синхронно, чтобы сравнение работало
+      // даже если асинхронная загрузка ещё не завершилась
+      this._editingOriginalTitleRu = this.articleForm.titleRu
+      this._editingOriginalTitleEn = this.articleForm.titleEn
+      this._editingOriginalKeywords = (this.articleForm.keywordsArr || []).slice()
 
       // Загружаем реальных контрибьютеров из БД, чтобы их можно было отредактировать
       getSubmissionDetail(article.id)
@@ -909,6 +917,9 @@ export default {
           // эндпоинта публикации (в ответе submission их нет).
           if (pubData && pubData.keywords) {
             self.articleForm.keywordsArr = self.keywordsToArray(pubData.keywords)
+            // Обновляем исходные keywords, т.к. они могли измениться
+            // после загрузки из прямого эндпоинта публикации
+            self._editingOriginalKeywords = (self.articleForm.keywordsArr || []).slice()
           }
           if (!contributors || !contributors.length) return
           var authorsArr = contributors.map(function (c) {
@@ -960,17 +971,24 @@ export default {
             // OJS требует поле version при PUT /publications/{id},
             // иначе возвращает 400 и данные не сохраняются.
             var pubData = { version: self._editingPublicationVersion || 1 }
-            if (self.articleForm.titleRu || self.articleForm.titleEn) {
+            // Добавляем title только если он изменился
+            var titleChanged = (self.articleForm.titleRu !== self._editingOriginalTitleRu) ||
+                               (self.articleForm.titleEn !== self._editingOriginalTitleEn)
+            if (titleChanged && (self.articleForm.titleRu || self.articleForm.titleEn)) {
               pubData.title = {}
               if (self.articleForm.titleRu) pubData.title.ru = self.articleForm.titleRu
               if (self.articleForm.titleEn) pubData.title.en = self.articleForm.titleEn
             }
+            // Добавляем keywords только если они изменились
             var kwList = (self.articleForm.keywordsArr || [])
               .map(function (s) { return (s || '').trim() })
               .filter(Boolean)
-            if (kwList.length) {
+            var origKw = (self._editingOriginalKeywords || []).map(function (s) { return (s || '').trim() }).filter(Boolean)
+            var kwChanged = JSON.stringify(kwList) !== JSON.stringify(origKw)
+            if (kwChanged && kwList.length) {
               pubData.keywords = { ru: kwList }
             }
+            // Если ничего не изменилось — пропускаем updatePublication
             if (Object.keys(pubData).length <= 1) return
             var doUpdate = function () {
               return updatePublication(submissionId, publicationId, pubData)
